@@ -2,6 +2,8 @@ using System.Collections.ObjectModel;
 using System.Text;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Interop;
+using Forms = System.Windows.Forms;
 using OOFSponderModern.Models;
 using OOFSponderModern.Services;
 
@@ -137,10 +139,10 @@ public sealed class MainViewModel : ViewModelBase
         _ => "Selected app color template."
     };
 
-    public Brush PalettePreviewBrush1 => CreateBrush(GetPaletteColors(IsDarkMode, SelectedThemePalette).Accent);
-    public Brush PalettePreviewBrush2 => CreateBrush(GetPaletteColors(IsDarkMode, SelectedThemePalette).Success);
-    public Brush PalettePreviewBrush3 => CreateBrush(GetPaletteColors(IsDarkMode, SelectedThemePalette).AccentSoft);
-    public Brush PalettePreviewBrush4 => CreateBrush(GetPaletteColors(IsDarkMode, SelectedThemePalette).PanelSubtle);
+    public System.Windows.Media.Brush PalettePreviewBrush1 => CreateBrush(GetPaletteColors(IsDarkMode, SelectedThemePalette).Accent);
+    public System.Windows.Media.Brush PalettePreviewBrush2 => CreateBrush(GetPaletteColors(IsDarkMode, SelectedThemePalette).Success);
+    public System.Windows.Media.Brush PalettePreviewBrush3 => CreateBrush(GetPaletteColors(IsDarkMode, SelectedThemePalette).AccentSoft);
+    public System.Windows.Media.Brush PalettePreviewBrush4 => CreateBrush(GetPaletteColors(IsDarkMode, SelectedThemePalette).PanelSubtle);
     public string LinkedTimeAdjustmentText => IsLinkedTimeAdjustmentEnabled
         ? "Linked time adjustment is on: changing start time shifts end time."
         : "Linked time adjustment is off: start and end time change independently.";
@@ -370,6 +372,62 @@ public sealed class MainViewModel : ViewModelBase
         private set => SetProperty(ref _previewText, value);
     }
 
+    public void RestoreWindowPlacement(Window window)
+    {
+        var preferences = _state.Preferences;
+        if (preferences.WindowLeft is null ||
+            preferences.WindowTop is null ||
+            preferences.WindowWidth is null ||
+            preferences.WindowHeight is null ||
+            string.IsNullOrWhiteSpace(preferences.WindowMonitorDeviceName))
+        {
+            window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            return;
+        }
+
+        var monitorExists = Forms.Screen.AllScreens.Any(screen =>
+            string.Equals(screen.DeviceName, preferences.WindowMonitorDeviceName, StringComparison.OrdinalIgnoreCase));
+        var proposedBounds = new System.Drawing.Rectangle(
+            (int)Math.Round(preferences.WindowLeft.Value),
+            (int)Math.Round(preferences.WindowTop.Value),
+            (int)Math.Round(preferences.WindowWidth.Value),
+            (int)Math.Round(preferences.WindowHeight.Value));
+        var intersectsVisibleScreen = Forms.Screen.AllScreens.Any(screen => screen.WorkingArea.IntersectsWith(proposedBounds));
+
+        if (!monitorExists || !intersectsVisibleScreen)
+        {
+            window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            return;
+        }
+
+        window.WindowStartupLocation = WindowStartupLocation.Manual;
+        window.Left = preferences.WindowLeft.Value;
+        window.Top = preferences.WindowTop.Value;
+        window.Width = Math.Max(window.MinWidth, preferences.WindowWidth.Value);
+        window.Height = Math.Max(window.MinHeight, preferences.WindowHeight.Value);
+        if (preferences.IsWindowMaximized)
+        {
+            window.WindowState = WindowState.Maximized;
+        }
+    }
+
+    public void SaveWindowPlacement(Window window)
+    {
+        var preferences = _state.Preferences;
+        var isMaximized = window.WindowState == WindowState.Maximized;
+        var restoreBounds = isMaximized ? window.RestoreBounds : new Rect(window.Left, window.Top, window.Width, window.Height);
+        var screen = Forms.Screen.FromHandle(new WindowInteropHelper(window).Handle);
+
+        preferences.WindowMonitorDeviceName = screen.DeviceName;
+        preferences.WindowLeft = restoreBounds.Left;
+        preferences.WindowTop = restoreBounds.Top;
+        preferences.WindowWidth = restoreBounds.Width;
+        preferences.WindowHeight = restoreBounds.Height;
+        preferences.IsWindowMaximized = isMaximized;
+
+        SaveSettingsNow();
+    }
+
     private void RecalculateWindow()
     {
         var now = DateTimeOffset.Now;
@@ -449,7 +507,7 @@ public sealed class MainViewModel : ViewModelBase
     private async Task ApplyToM365Async()
     {
         var preview = BuildPreview();
-        var confirmation = MessageBox.Show(
+        var confirmation = System.Windows.MessageBox.Show(
             $"Apply {preview.ActiveProfile} automatic replies to your Microsoft 365 mailbox from {preview.Window.Start:g} to {preview.Window.End:g}?",
             "Apply to Microsoft 365",
             MessageBoxButton.YesNo,
@@ -584,6 +642,21 @@ public sealed class MainViewModel : ViewModelBase
         _ = SaveSettingsAfterDelayAsync(token);
     }
 
+    private void SaveSettingsNow()
+    {
+        _saveSettingsDebounce?.Cancel();
+        _saveSettingsDebounce?.Dispose();
+        _saveSettingsDebounce = null;
+        try
+        {
+            _settingsService.SaveAsync(_state).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            SyncStatus = $"Settings save failed ({ex.GetType().Name})";
+        }
+    }
+
     private async Task SaveSettingsAfterDelayAsync(CancellationToken cancellationToken)
     {
         try
@@ -625,14 +698,14 @@ public sealed class MainViewModel : ViewModelBase
         SetBrush("QuickTimeButtonTextBrush", colors.QuickButtonText);
         SetBrush("DisabledBrush", colors.Disabled);
         SetBrush("DisabledTextBrush", colors.DisabledText);
-        SetSystemBrush(SystemColors.WindowBrushKey, colors.Panel);
-        SetSystemBrush(SystemColors.WindowTextBrushKey, colors.TextPrimary);
-        SetSystemBrush(SystemColors.ControlBrushKey, colors.PanelSubtle);
-        SetSystemBrush(SystemColors.ControlTextBrushKey, colors.TextPrimary);
-        SetSystemBrush(SystemColors.HighlightBrushKey, colors.AccentSoft);
-        SetSystemBrush(SystemColors.HighlightTextBrushKey, colors.AccentText);
-        SetSystemBrush(SystemColors.InactiveSelectionHighlightBrushKey, colors.PanelSubtle);
-        SetSystemBrush(SystemColors.InactiveSelectionHighlightTextBrushKey, colors.TextPrimary);
+        SetSystemBrush(System.Windows.SystemColors.WindowBrushKey, colors.Panel);
+        SetSystemBrush(System.Windows.SystemColors.WindowTextBrushKey, colors.TextPrimary);
+        SetSystemBrush(System.Windows.SystemColors.ControlBrushKey, colors.PanelSubtle);
+        SetSystemBrush(System.Windows.SystemColors.ControlTextBrushKey, colors.TextPrimary);
+        SetSystemBrush(System.Windows.SystemColors.HighlightBrushKey, colors.AccentSoft);
+        SetSystemBrush(System.Windows.SystemColors.HighlightTextBrushKey, colors.AccentText);
+        SetSystemBrush(System.Windows.SystemColors.InactiveSelectionHighlightBrushKey, colors.PanelSubtle);
+        SetSystemBrush(System.Windows.SystemColors.InactiveSelectionHighlightTextBrushKey, colors.TextPrimary);
     }
 
     private static ThemeColors GetPaletteColors(bool isDarkMode, ThemePalette palette) => (isDarkMode, palette) switch
@@ -652,16 +725,16 @@ public sealed class MainViewModel : ViewModelBase
         _ => GetPaletteColors(isDarkMode, ThemePalette.ProductivityBlue)
     };
 
-    private static SolidColorBrush CreateBrush(string color) => new((Color)ColorConverter.ConvertFromString(color));
+    private static SolidColorBrush CreateBrush(string color) => new((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(color));
 
     private static void SetBrush(string resourceKey, string color)
     {
-        Application.Current.Resources[resourceKey] = CreateBrush(color);
+        System.Windows.Application.Current.Resources[resourceKey] = CreateBrush(color);
     }
 
     private static void SetSystemBrush(ResourceKey resourceKey, string color)
     {
-        Application.Current.Resources[resourceKey] = CreateBrush(color);
+        System.Windows.Application.Current.Resources[resourceKey] = CreateBrush(color);
     }
 
     private sealed record ThemeColors(

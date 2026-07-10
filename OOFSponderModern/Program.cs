@@ -51,7 +51,7 @@ internal static class Program
             return mutex;
         }
 
-        MessageBox.Show(
+        System.Windows.MessageBox.Show(
             "OOFSponderModern is already running, but no visible window could be activated. Please close it from Task Manager and try again.",
             "OOFSponderModern",
             MessageBoxButton.OK,

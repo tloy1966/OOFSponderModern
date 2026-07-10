@@ -14,5 +14,19 @@ public partial class MainWindow : Window
             new SchedulerService(),
             new GraphMailboxSettingsClient(),
             new LocalOofTemplateGenerator());
+        if (DataContext is MainViewModel viewModel)
+        {
+            viewModel.RestoreWindowPlacement(this);
+        }
+    }
+
+    protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+    {
+        if (DataContext is MainViewModel viewModel)
+        {
+            viewModel.SaveWindowPlacement(this);
+        }
+
+        base.OnClosing(e);
     }
 }
