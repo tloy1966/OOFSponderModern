@@ -144,13 +144,30 @@ The app opens centered and restores only the previous window dimensions, not the
 
 ## Releases
 
-The release workflow runs when a tag matching `v*` is pushed. A valid version tag such as `v1.0.0` builds, runs the regression harness, creates `OOFSponderModern-win-x64.zip`, uploads the Actions artifact, and creates or updates the corresponding GitHub Release.
+The release workflow validates a semantic version, runs the regression harness, builds the solution, creates `OOFSponderModern-win-x64.zip`, uploads the Actions artifact, and creates or updates the corresponding GitHub Release. A release is published only after all preceding steps succeed.
 
-Manual workflow dispatch builds and uploads an Actions artifact only; it does not create a public GitHub Release.
+### Option 1: push a version tag
+
+```powershell
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Any pushed tag matching `v*` starts the workflow. The tag must be a semantic version such as `v1.0.0` or `v1.0.0-beta.1`.
+
+### Option 2: run the workflow in GitHub
+
+1. Open the repository's **Actions** tab.
+2. Select **Release OOFSponderModern**.
+3. Select **Run workflow**.
+4. Enter a version such as `v1.0.0`.
+5. Run the workflow.
+
+Manual dispatch creates or updates the same public GitHub Release; no local tag command is required. If that release version already exists, its ZIP asset is replaced.
 
 ## Repository layout
 
 - `OOFSponderModern/` — WPF app source.
 - `OOFSponderModern.Tests/` — console scheduler regression harness.
 - `SupportingFiles/publish-modern-github.ps1` — self-contained Windows publish script.
-- `.github/workflows/release.yml` — tag-triggered release workflow.
+- `.github/workflows/release.yml` — tag-triggered or manually dispatched release workflow.

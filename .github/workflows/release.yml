@@ -2,6 +2,11 @@ name: Release OOFSponderModern
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (for example: v1.0.0 or 1.0.0)"
+        required: true
+        type: string
   push:
     tags:
       - "v*"
@@ -16,11 +21,37 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
+
+      - name: Resolve release version
+        id: release
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq "tag") {
+            $tag = $env:GITHUB_REF_NAME
+          }
+          else {
+            $tag = "${{ inputs.version }}".Trim()
+            if (-not $tag.StartsWith("v")) {
+              $tag = "v$tag"
+            }
+          }
+
+          if ($tag -notmatch '^v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$') {
+            throw "Release version '$tag' is invalid. Use a semantic version such as v1.0.0 or v1.0.0-beta.1."
+          }
+
+          $version = $tag.Substring(1)
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Output "Release tag: $tag"
+          Write-Output "Application version: $version"
 
       - name: Run modern scheduler tests
         shell: pwsh
@@ -33,12 +64,10 @@ jobs:
       - name: Publish modern app
         shell: pwsh
         run: |
-          $version = ""
-          if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME.StartsWith("v")) {
-            $version = $env:GITHUB_REF_NAME.TrimStart("v")
-          }
-
-          .\SupportingFiles\publish-modern-github.ps1 -Configuration Release -Runtime win-x64 -Version $version
+          .\SupportingFiles\publish-modern-github.ps1 `
+            -Configuration Release `
+            -Runtime win-x64 `
+            -Version "${{ steps.release.outputs.version }}"
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
@@ -47,23 +76,22 @@ jobs:
           path: artifacts/OOFSponderModern-win-x64.zip
 
       - name: Publish GitHub release
-        if: github.ref_type == 'tag'
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $artifact = "artifacts/OOFSponderModern-win-x64.zip"
-          $tag = $env:GITHUB_REF_NAME
-          $notes = @"
-          OOFSponderModern Windows x64 release.
+          $tag = "${{ steps.release.outputs.tag }}"
+          $repository = $env:GITHUB_REPOSITORY
 
-          This build is distributed via GitHub Releases, not ClickOnce.
-          "@
-
-          gh release view $tag *> $null
+          gh release view $tag --repo $repository *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag $artifact --clobber
+            gh release upload $tag $artifact --clobber --repo $repository
           }
           else {
-            gh release create $tag $artifact --title "OOFSponderModern $tag" --notes $notes
+            gh release create $tag $artifact `
+              --repo $repository `
+              --target $env:GITHUB_SHA `
+              --title "OOFSponderModern $tag" `
+              --generate-notes
           }
