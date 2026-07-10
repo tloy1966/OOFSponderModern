@@ -4,7 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
-        Title="OOFSponder Modern Preview" Icon="pack://application:,,,/Assets/AppIcon.ico" Height="900" Width="1280" MinHeight="760" MinWidth="1040" WindowStartupLocation="CenterScreen" ShowInTaskbar="True"
+        Title="OOFSponder Modern Preview" Icon="pack://application:,,,/Assets/AppIcon.ico" Height="940" Width="1360" MinHeight="820" MinWidth="1120" WindowStartupLocation="CenterScreen" ShowInTaskbar="True"
         Background="{DynamicResource AppBackgroundBrush}">
     <Grid>
         <Grid Margin="26">
@@ -158,10 +158,11 @@
                 </TabItem>
 
                 <TabItem Header="Messages">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <Grid Margin="0,16,0,0">
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="*" />
-                            <RowDefinition Height="240" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -178,9 +179,9 @@
                                     <RowDefinition Height="*" />
                                 </Grid.RowDefinitions>
                                 <TextBlock Text="Primary profile" Style="{StaticResource SectionTitleStyle}" />
-                                <TextBox Grid.Row="1" Text="{Binding PrimaryInternalMessage, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" ToolTip="Internal reply for normal scheduled OOF windows." />
+                                <TextBox Grid.Row="1" Text="{Binding PrimaryInternalMessage, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" MinHeight="150" ToolTip="Internal reply for normal scheduled OOF windows." />
                                 <TextBlock Grid.Row="2" Text="External" Style="{StaticResource LabelTextStyle}" />
-                                <TextBox Grid.Row="3" Text="{Binding PrimaryExternalMessage, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" ToolTip="External reply for normal scheduled OOF windows. Audience scope controls who receives it." />
+                                <TextBox Grid.Row="3" Text="{Binding PrimaryExternalMessage, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" MinHeight="150" ToolTip="External reply for normal scheduled OOF windows. Audience scope controls who receives it." />
                             </Grid>
                         </Border>
 
@@ -193,9 +194,9 @@
                                     <RowDefinition Height="*" />
                                 </Grid.RowDefinitions>
                                 <TextBlock Text="Extended profile" Style="{StaticResource SectionTitleStyle}" />
-                                <TextBox Grid.Row="1" Text="{Binding ExtendedInternalMessage, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" ToolTip="Internal reply for longer away periods, such as vacation or extended leave." />
+                                <TextBox Grid.Row="1" Text="{Binding ExtendedInternalMessage, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" MinHeight="150" ToolTip="Internal reply for longer away periods, such as vacation or extended leave." />
                                 <TextBlock Grid.Row="2" Text="External" Style="{StaticResource LabelTextStyle}" />
-                                <TextBox Grid.Row="3" Text="{Binding ExtendedExternalMessage, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" ToolTip="External reply for longer away periods. Include backup contact details when useful." />
+                                <TextBox Grid.Row="3" Text="{Binding ExtendedExternalMessage, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" MinHeight="150" ToolTip="External reply for longer away periods. Include backup contact details when useful." />
                             </Grid>
                         </Border>
 
@@ -238,6 +239,7 @@
                             </Grid>
                         </Border>
                     </Grid>
+                    </ScrollViewer>
                 </TabItem>
 
                 <TabItem Header="Configuration">
