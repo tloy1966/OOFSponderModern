@@ -1,112 +1,156 @@
-## OOFSponder
+# OOFSponderModern
 
-OOFSponder schedules Microsoft 365 automatic replies from your normal working hours.
+OOFSponderModern calculates the next out-of-office interval from your weekly working hours and lets you review and manually apply that interval to Microsoft 365.
 
-The app is now centered on **OOFSponderModern**, a Windows WPF app distributed from GitHub Releases.
+It is a Windows WPF app targeting .NET 10. It does not run a background scheduler or automatically create later recurring intervals. Reopen the app and apply again when a new interval is needed.
+
+## Features
+
+- Weekly working-hours editor with off-work days and 30-minute adjustment buttons.
+- Optional linked start/end adjustments that preserve the workday duration.
+- Primary and Extended internal/external message profiles.
+- External audience choices: `None`, `Contacts Only`, and `All External`.
+- Sanitized review-before-apply prompt and result banner.
+- Microsoft Graph readback of current automatic-reply status without importing or exposing message bodies.
+- Local rule-based message suggestions; no external text-generation service is called.
+- Light/dark mode with Productivity Blue, Trust Navy, Teal Mint, and Premium Gold palettes.
+- First-run guidance, automatic local settings persistence, and single-instance startup.
+- DST-aware calculation of future local working times.
 
 ## Credits / Origin
 
 This project is inspired by and references the original [EvanBasalik/OOFSponder](https://github.com/EvanBasalik/OOFSponder) project.
 
-This repository is an AI-assisted modern rewrite focused on:
-
-- A modern WPF user experience.
-- GitHub Releases instead of ClickOnce deployment.
-- Microsoft Graph based Microsoft 365 automatic reply updates.
-- Review-before-apply confirmation and current Microsoft 365 automatic reply readback.
-- Apply result banner and first-run checklist for safer setup.
-- Light/dark mode and selectable color templates.
-- Local message suggestions for drafting OOF replies from the current schedule context.
-
-Message suggestions are generated locally with built-in rules; the app does not call external text-generation services.
+This repository is a modern rewrite focused on WPF, Microsoft Graph, and GitHub-based distribution instead of ClickOnce.
 
 ## Install
 
-Download the latest `OOFSponderModern-win-x64.zip` from GitHub Releases, extract it, and run `OOFSponderModern.exe`.
+Tagged releases publish a self-contained Windows x64 archive named `OOFSponderModern-win-x64.zip` on the repository's [Releases page](https://github.com/tloy1966/OOFSponderModern/releases). If no tagged release is available yet, build from source using the instructions below.
 
-> OOFSponderModern is distributed via GitHub Releases, not ClickOnce.
+Extract the archive and run `OOFSponderModern.exe`. The packaged build includes the required .NET runtime and does not use ClickOnce.
 
-## Build from source
+## New-user defaults
+
+- Monday through Friday: `9:00 AM`–`6:00 PM`.
+- Saturday and Sunday: `Off work`.
+- External audience: `Contacts Only`.
+- Primary profile selected for Microsoft 365 apply.
+
+Existing installations retain their saved schedule, including older `9:00 AM`–`5:00 PM` values. The app does not overwrite or migrate user-edited working hours.
+
+## Build and run from source
 
 Requirements:
 
 - Windows
 - .NET 10 SDK
 
-Build:
-
 ```powershell
-dotnet build .\OOFSponder.sln --configuration Debug
+dotnet build .\OOFSponder.sln --configuration Release
+dotnet run --project .\OOFSponderModern\OOFSponderModern.csproj --configuration Release
 ```
 
-Run the modern app:
+Run the console scheduler regression checks:
 
 ```powershell
-Start-Process .\OOFSponderModern\bin\Debug\net10.0-windows\OOFSponderModern.exe
+dotnet run --project .\OOFSponderModern.Tests\OOFSponderModern.Tests.csproj --configuration Release
 ```
 
-Run tests:
+The regression harness covers scheduler boundaries, all-off-work behavior, linked time adjustment, production default hours, and a daylight-saving transition.
 
-```powershell
-dotnet run --project .\OOFSponderModern.Tests\OOFSponderModern.Tests.csproj --configuration Debug
-```
-
-Create a GitHub-release-ready archive locally:
+Create the self-contained Windows x64 archive locally:
 
 ```powershell
 .\SupportingFiles\publish-modern-github.ps1 -Configuration Release -Runtime win-x64
 ```
 
-The zip is written to `artifacts\OOFSponderModern-win-x64.zip`.
+The archive is written to `artifacts\OOFSponderModern-win-x64.zip`.
 
-## Settings storage
+## Usage
 
-OOFSponderModern saves user configuration locally at:
+### Schedule
+
+Set normal working hours and mark non-working days as `Off work`. The app calculates one next OOF interval:
+
+- Before work: now through today's start.
+- During work: today's end through the next working start.
+- After work or on an off-work day: now through the next working start.
+- If every day is off: now through one week later.
+
+Choose the Primary or Extended profile under `Profile to apply`, review the sanitized preview, then select `Apply to M365`. The app asks for confirmation before sending changes.
+
+### Messages
+
+Edit the Primary and Extended internal/external replies. Message suggestions are generated locally and remain temporary until `Apply suggestion` copies them into a profile.
+
+Audience Scope controls external replies only:
+
+- **None**: no external automatic reply is sent. The saved external draft remains editable, but the Graph update sends an empty external message.
+- **Contacts Only**: external replies are sent only to people in your contacts.
+- **All External**: external replies are sent to all external senders.
+
+Internal users always receive the selected profile's internal reply.
+
+### Configuration
+
+Configuration is grouped by purpose:
+
+- Appearance: light/dark mode and color palette.
+- Schedule Behavior: linked start/end time adjustment.
+- Microsoft 365 Safety: review behavior and selected apply profile.
+- Local App Settings: persistence and centered window behavior.
+
+### Sync / Diagnostics
+
+`Load current M365 settings` performs a display-only read. It shows mailbox status, audience, scheduled dates, and whether messages are present, including character counts. It does not replace local schedule, audience, or message editors.
+
+Recent activity is sanitized; message bodies are omitted.
+
+## Microsoft 365 behavior and permissions
+
+OOFSponderModern uses MSAL public-client authentication with the Windows broker and requests these delegated scopes:
+
+- `user.read`
+- `MailboxSettings.ReadWrite`
+
+The app uses `GET https://graph.microsoft.com/v1.0/me/mailboxSettings` for display-only readback and `PATCH https://graph.microsoft.com/v1.0/me/mailboxSettings` to update the nested `automaticRepliesSetting` object.
+
+Apply behavior:
+
+- Always sets automatic replies to `scheduled`.
+- Sends the calculated start/end using the local Windows time-zone ID.
+- Sends only the selected Primary or Extended profile.
+- Maps audience to Graph values `none`, `contactsOnly`, or `all`.
+- Sends an empty external reply when audience is `None`.
+- Does not merge with or automatically import existing remote settings.
+
+## Local data
+
+User settings are stored at:
 
 ```text
 %APPDATA%\OOFSponderModern\usersettings.json
 ```
 
-Saved configuration includes working hours, off-work days, message profiles, audience scope, selected apply profile, theme mode, color template, linked time adjustment preference, first-run checklist state, and window size.
+The file contains the weekly schedule, messages, audience, selected profiles, theme, palette, linked-time preference, first-run guidance state, window size, sync state, and recent sanitized activity. Most edits are saved after a short debounce, with a final save when the main window closes.
 
-## Microsoft 365 permissions
+Authentication tokens are cached separately by MSAL at:
 
-OOFSponderModern uses Microsoft authentication and Microsoft Graph with these delegated scopes:
+```text
+%LOCALAPPDATA%\OOFSponderModern\msalcache.bin3
+```
 
-- `user.read`
-- `MailboxSettings.ReadWrite`
+The app opens centered and restores only the previous window dimensions, not the prior monitor position or maximized state.
 
-Clicking `Apply to M365` updates your mailbox automatic replies. The app shows a review prompt before sending the Graph update, then displays an apply result banner. Message bodies are not written to diagnostics.
+## Releases
 
-## Usage
+The release workflow runs when a tag matching `v*` is pushed. A valid version tag such as `v1.0.0` builds, runs the regression harness, creates `OOFSponderModern-win-x64.zip`, uploads the Actions artifact, and creates or updates the corresponding GitHub Release.
 
-Use the `Schedule` tab to set normal working hours. Mark a day as `Off work` when automatic replies should stay active through the next working start.
-
-Use `Link start/end time` when you want changing either workday start or end to shift the other time by the same amount.
-
-Use the `Messages` tab to edit the Primary and Extended internal/external reply profiles.
-
-Use `Profile to apply` in the `Schedule` tab to choose whether `Apply to M365` sends the Primary or Extended profile to Microsoft 365.
-
-Use `Load current M365 settings` in the `Sync / Diagnostics` tab to read your current mailbox automatic reply state before applying changes. This signs in with the same Graph permissions and does not modify mailbox settings.
-
-Use `Message Suggestions` to generate local OOF reply drafts and copy them into a selected profile. This does not send anything to Microsoft 365.
-
-## Audience Scope
-
-The _Audience Scope_ dropdown controls who receives your external OOF message. There are three options:
-
-- **None** – No external OOF message is sent to anyone outside your organization. When this option is selected, the External Message editor is disabled.
-- **Contacts Only** – Only senders who are in your contacts list will receive the external OOF message.
-- **All** – All external senders will receive the external OOF message.
-
-_Hint: If you do not want to send an external OOF message at all, set the Audience Scope to **None**._
-
-Internal users always receive the internal reply; `Audience Scope` only controls external automatic replies.
+Manual workflow dispatch builds and uploads an Actions artifact only; it does not create a public GitHub Release.
 
 ## Repository layout
 
-- `OOFSponderModern/` - WPF app source.
-- `OOFSponderModern.Tests/` - lightweight scheduler regression tests.
-- `SupportingFiles/publish-modern-github.ps1` - local publish script used by GitHub Releases.
-- `.github/workflows/release.yml` - release workflow for `OOFSponderModern-win-x64.zip`.
+- `OOFSponderModern/` — WPF app source.
+- `OOFSponderModern.Tests/` — console scheduler regression harness.
+- `SupportingFiles/publish-modern-github.ps1` — self-contained Windows publish script.
+- `.github/workflows/release.yml` — tag-triggered release workflow.

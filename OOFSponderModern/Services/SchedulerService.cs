@@ -4,6 +4,13 @@ namespace OOFSponderModern.Services;
 
 public sealed class SchedulerService : ISchedulerService
 {
+    private readonly TimeZoneInfo _localTimeZone;
+
+    public SchedulerService(TimeZoneInfo? localTimeZone = null)
+    {
+        _localTimeZone = localTimeZone ?? TimeZoneInfo.Local;
+    }
+
     public OofWindow CalculateNextWindow(IReadOnlyList<ScheduleDay> weeklySchedule, DateTimeOffset now)
     {
         if (weeklySchedule.Count == 0)
@@ -19,11 +26,11 @@ public sealed class SchedulerService : ISchedulerService
         var today = GetDay(weeklySchedule, now.DayOfWeek);
         if (today is not null && !today.IsOffWork)
         {
-            var todayStart = AtLocalTime(now.Date, today.StartTime, now.Offset);
-            var todayEnd = AtLocalTime(now.Date, today.EndTime, now.Offset);
+            var todayStart = AtLocalTime(now.Date, today.StartTime);
+            var todayEnd = AtLocalTime(now.Date, today.EndTime);
             if (todayEnd <= todayStart)
             {
-                todayEnd = todayEnd.AddDays(1);
+                todayEnd = AtLocalTime(now.Date.AddDays(1), today.EndTime);
             }
 
             if (now < todayStart)
@@ -54,11 +61,11 @@ public sealed class SchedulerService : ISchedulerService
             return false;
         }
 
-        var start = AtLocalTime(now.Date, today.StartTime, now.Offset);
-        var end = AtLocalTime(now.Date, today.EndTime, now.Offset);
+        var start = AtLocalTime(now.Date, today.StartTime);
+        var end = AtLocalTime(now.Date, today.EndTime);
         if (end <= start)
         {
-            end = end.AddDays(1);
+            end = AtLocalTime(now.Date.AddDays(1), today.EndTime);
         }
 
         return now >= start && now <= end;
@@ -67,10 +74,18 @@ public sealed class SchedulerService : ISchedulerService
     private static ScheduleDay? GetDay(IReadOnlyList<ScheduleDay> schedule, DayOfWeek dayOfWeek) =>
         schedule.FirstOrDefault(day => day.DayOfWeek == dayOfWeek);
 
-    private static DateTimeOffset AtLocalTime(DateTime date, TimeSpan time, TimeSpan offset) =>
-        new(date.Date.Add(time), offset);
+    private DateTimeOffset AtLocalTime(DateTime date, TimeSpan time)
+    {
+        var localDateTime = DateTime.SpecifyKind(date.Date.Add(time), DateTimeKind.Unspecified);
+        if (_localTimeZone.IsInvalidTime(localDateTime))
+        {
+            localDateTime = localDateTime.AddHours(1);
+        }
 
-    private static DateTimeOffset FindNextWorkingStart(IReadOnlyList<ScheduleDay> schedule, DateTimeOffset after)
+        return new DateTimeOffset(localDateTime, _localTimeZone.GetUtcOffset(localDateTime));
+    }
+
+    private DateTimeOffset FindNextWorkingStart(IReadOnlyList<ScheduleDay> schedule, DateTimeOffset after)
     {
         for (var offset = 0; offset < 14; offset++)
         {
@@ -81,7 +96,7 @@ public sealed class SchedulerService : ISchedulerService
                 continue;
             }
 
-            var start = AtLocalTime(date, day.StartTime, after.Offset);
+            var start = AtLocalTime(date, day.StartTime);
             if (start > after)
             {
                 return start;

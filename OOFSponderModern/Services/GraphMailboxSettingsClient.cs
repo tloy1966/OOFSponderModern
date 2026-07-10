@@ -37,7 +37,7 @@ public sealed class GraphMailboxSettingsClient : IMailboxSettingsClient
         return ParseCurrentSettings(responseBody, result.Account.Username);
     }
 
-    public async Task<string> PreviewApplyAsync(MailboxSettingsPreview preview, CancellationToken cancellationToken = default)
+    public async Task<string> ApplyAsync(MailboxSettingsPreview preview, CancellationToken cancellationToken = default)
     {
         var result = await AcquireTokenAsync(cancellationToken);
         using var request = new HttpRequestMessage(new HttpMethod("PATCH"), MailboxSettingsUri)

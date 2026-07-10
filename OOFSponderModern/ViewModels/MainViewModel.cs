@@ -60,7 +60,7 @@ public sealed class MainViewModel : ViewModelBase
                 .Select(day => new ScheduleDayViewModel(day, RecalculateWindow, () => IsLinkedTimeAdjustmentEnabled)));
 
         RecentActivity = new ObservableCollection<string>(_state.Sync.RecentActivity);
-        AudienceScopes = Enum.GetValues<AudienceScope>();
+        AudienceScopeDisplayNames = Enum.GetValues<AudienceScope>().Select(ToAudienceScopeDisplayName).ToArray();
         TemplateTargets = Enum.GetValues<TemplateTargetProfile>();
         ThemePalettes = Enum.GetValues<ThemePalette>();
 
@@ -112,7 +112,7 @@ public sealed class MainViewModel : ViewModelBase
 
     public ObservableCollection<ScheduleDayViewModel> ScheduleDays { get; }
     public ObservableCollection<string> RecentActivity { get; }
-    public IReadOnlyList<AudienceScope> AudienceScopes { get; }
+    public IReadOnlyList<string> AudienceScopeDisplayNames { get; }
     public IReadOnlyList<TemplateTargetProfile> TemplateTargets { get; }
     public IReadOnlyList<ThemePalette> ThemePalettes { get; }
     public RelayCommand PreviewCommand { get; }
@@ -186,7 +186,17 @@ public sealed class MainViewModel : ViewModelBase
         private set => SetProperty(ref _scheduleStatus, value);
     }
 
-    public string AudienceScopeText => SelectedAudienceScope.ToString();
+    public string AudienceScopeText => ToAudienceScopeDisplayName(SelectedAudienceScope);
+    public string SelectedAudienceScopeDisplayName
+    {
+        get => ToAudienceScopeDisplayName(SelectedAudienceScope);
+        set => SelectedAudienceScope = value switch
+        {
+            "None" => AudienceScope.None,
+            "All External" => AudienceScope.AllExternal,
+            _ => AudienceScope.ContactsOnly
+        };
+    }
     public string TemplateTargetText => SelectedTemplateTarget.ToString();
     public string ApplyProfileText => SelectedApplyProfile.ToString();
     public string AudienceScopeDescription => SelectedAudienceScope switch
@@ -263,6 +273,7 @@ public sealed class MainViewModel : ViewModelBase
 
             _state.Messages.AudienceScope = value;
             OnPropertyChanged(nameof(AudienceScopeText));
+            OnPropertyChanged(nameof(SelectedAudienceScopeDisplayName));
             OnPropertyChanged(nameof(AudienceScopeDescription));
             PreviewText = BuildPreviewText(BuildPreview());
             QueueSaveSettings();
@@ -529,7 +540,7 @@ public sealed class MainViewModel : ViewModelBase
 
         try
         {
-            var result = await _mailboxClient.PreviewApplyAsync(preview);
+            var result = await _mailboxClient.ApplyAsync(preview);
             SyncStatus = "Microsoft 365 apply complete";
             AuthState = "Connected";
             AddActivity(result);
@@ -622,7 +633,8 @@ public sealed class MainViewModel : ViewModelBase
     {
         var builder = new StringBuilder();
         builder.AppendLine("MICROSOFT 365 APPLY MODE — Apply will PATCH Microsoft Graph.");
-        builder.AppendLine("Target: /me/mailboxSettings/automaticRepliesSetting");
+        builder.AppendLine("Target: PATCH /v1.0/me/mailboxSettings");
+        builder.AppendLine("Payload property: automaticRepliesSetting");
         builder.AppendLine($"Active profile: {preview.ActiveProfile}");
         builder.AppendLine("Status: Scheduled");
         builder.AppendLine($"Start: {preview.Window.Start:yyyy-MM-dd HH:mm zzz}");
@@ -671,6 +683,14 @@ public sealed class MainViewModel : ViewModelBase
         builder.AppendLine($"External reply: {(summary.HasExternalReply ? "present" : "missing")} ({summary.ExternalReplyLength} chars)");
         return builder.ToString();
     }
+
+    private static string ToAudienceScopeDisplayName(AudienceScope scope) => scope switch
+    {
+        AudienceScope.None => "None",
+        AudienceScope.ContactsOnly => "Contacts Only",
+        AudienceScope.AllExternal => "All External",
+        _ => scope.ToString()
+    };
 
     private void ShowApplyResult(string message)
     {
