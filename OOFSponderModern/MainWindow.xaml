@@ -4,7 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
-        Title="OOFSponder Modern Preview" Icon="pack://application:,,,/Assets/AppIcon.ico" Height="900" Width="1280" MinHeight="760" MinWidth="1040"
+        Title="OOFSponder Modern Preview" Icon="pack://application:,,,/Assets/AppIcon.ico" Height="900" Width="1280" MinHeight="760" MinWidth="1040" WindowStartupLocation="CenterScreen" ShowInTaskbar="True"
         Background="{DynamicResource AppBackgroundBrush}">
     <Grid>
         <Grid Margin="26">

@@ -7,6 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
+    <StartupObject>OOFSponderModern.Program</StartupObject>
   </PropertyGroup>
 
   <ItemGroup>
