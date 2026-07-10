@@ -2,8 +2,6 @@ using System.Collections.ObjectModel;
 using System.Text;
 using System.Windows;
 using System.Windows.Media;
-using System.Windows.Interop;
-using Forms = System.Windows.Forms;
 using OOFSponderModern.Models;
 using OOFSponderModern.Services;
 
@@ -375,55 +373,25 @@ public sealed class MainViewModel : ViewModelBase
     public void RestoreWindowPlacement(Window window)
     {
         var preferences = _state.Preferences;
-        if (preferences.WindowLeft is null ||
-            preferences.WindowTop is null ||
-            preferences.WindowWidth is null ||
-            preferences.WindowHeight is null ||
-            string.IsNullOrWhiteSpace(preferences.WindowMonitorDeviceName))
+        window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        if (preferences.WindowWidth is null || preferences.WindowHeight is null)
         {
-            window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
             return;
         }
 
-        var monitorExists = Forms.Screen.AllScreens.Any(screen =>
-            string.Equals(screen.DeviceName, preferences.WindowMonitorDeviceName, StringComparison.OrdinalIgnoreCase));
-        var proposedBounds = new System.Drawing.Rectangle(
-            (int)Math.Round(preferences.WindowLeft.Value),
-            (int)Math.Round(preferences.WindowTop.Value),
-            (int)Math.Round(preferences.WindowWidth.Value),
-            (int)Math.Round(preferences.WindowHeight.Value));
-        var intersectsVisibleScreen = Forms.Screen.AllScreens.Any(screen => screen.WorkingArea.IntersectsWith(proposedBounds));
-
-        if (!monitorExists || !intersectsVisibleScreen)
-        {
-            window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
-            return;
-        }
-
-        window.WindowStartupLocation = WindowStartupLocation.Manual;
-        window.Left = preferences.WindowLeft.Value;
-        window.Top = preferences.WindowTop.Value;
         window.Width = Math.Max(window.MinWidth, preferences.WindowWidth.Value);
         window.Height = Math.Max(window.MinHeight, preferences.WindowHeight.Value);
-        if (preferences.IsWindowMaximized)
-        {
-            window.WindowState = WindowState.Maximized;
-        }
     }
 
     public void SaveWindowPlacement(Window window)
     {
         var preferences = _state.Preferences;
-        var isMaximized = window.WindowState == WindowState.Maximized;
-        var restoreBounds = isMaximized ? window.RestoreBounds : new Rect(window.Left, window.Top, window.Width, window.Height);
-        var screen = Forms.Screen.FromHandle(new WindowInteropHelper(window).Handle);
+        var restoreBounds = window.WindowState == WindowState.Maximized
+            ? window.RestoreBounds
+            : new Rect(window.Left, window.Top, window.Width, window.Height);
 
-        preferences.WindowMonitorDeviceName = screen.DeviceName;
-        preferences.WindowLeft = restoreBounds.Left;
-        preferences.WindowTop = restoreBounds.Top;
         preferences.WindowWidth = restoreBounds.Width;
         preferences.WindowHeight = restoreBounds.Height;
-        preferences.IsWindowMaximized = isMaximized;
 
         SaveSettingsNow();
     }
