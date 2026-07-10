@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.Reflection;
 using System.Text;
 using System.Windows;
 using System.Windows.Media;
@@ -12,6 +14,8 @@ public sealed class MainViewModel : ViewModelBase
     private readonly ISchedulerService _scheduler;
     private readonly IMailboxSettingsClient _mailboxClient;
     private readonly IOofTemplateGenerator _templateGenerator;
+    private readonly IMessageTemplateRenderer _messageTemplateRenderer;
+    private readonly IReleaseUpdateService _releaseUpdateService;
     private readonly ISettingsService _settingsService;
     private readonly AppState _state;
     private CancellationTokenSource? _saveSettingsDebounce;
@@ -40,17 +44,30 @@ public sealed class MainViewModel : ViewModelBase
     private bool _isApplyResultVisible;
     private bool _isOnboardingVisible;
     private ThemePalette _selectedThemePalette = ThemePalette.ProductivityBlue;
+    private MessageTemplate? _selectedMessageTemplate;
+    private string _templateName = string.Empty;
+    private string _templateInternalText = string.Empty;
+    private string _templateExternalText = string.Empty;
+    private string _templateDisplayName = string.Empty;
+    private bool _isUpdateAvailable;
+    private string _updateNotificationText = string.Empty;
+    private string _updateReleaseNotes = string.Empty;
+    private string _updateStatusText = "Updates have not been checked yet.";
 
     public MainViewModel(
         ISettingsService settingsService,
         ISchedulerService scheduler,
         IMailboxSettingsClient mailboxClient,
-        IOofTemplateGenerator templateGenerator)
+        IOofTemplateGenerator templateGenerator,
+        IMessageTemplateRenderer messageTemplateRenderer,
+        IReleaseUpdateService releaseUpdateService)
     {
         _settingsService = settingsService;
         _scheduler = scheduler;
         _mailboxClient = mailboxClient;
         _templateGenerator = templateGenerator;
+        _messageTemplateRenderer = messageTemplateRenderer;
+        _releaseUpdateService = releaseUpdateService;
         _state = settingsService.LoadAsync().GetAwaiter().GetResult();
         _currentWindow = new OofWindow(DateTimeOffset.Now, DateTimeOffset.Now, "Not calculated yet.");
 
@@ -60,6 +77,7 @@ public sealed class MainViewModel : ViewModelBase
                 .Select(day => new ScheduleDayViewModel(day, RecalculateWindow, () => IsLinkedTimeAdjustmentEnabled)));
 
         RecentActivity = new ObservableCollection<string>(_state.Sync.RecentActivity);
+        MessageTemplates = new ObservableCollection<MessageTemplate>(_state.MessageTemplates.OrderBy(template => template.Name));
         AudienceScopeDisplayNames = Enum.GetValues<AudienceScope>().Select(ToAudienceScopeDisplayName).ToArray();
         TemplateTargets = Enum.GetValues<TemplateTargetProfile>();
         ThemePalettes = Enum.GetValues<ThemePalette>();
@@ -78,6 +96,9 @@ public sealed class MainViewModel : ViewModelBase
         _syncStatus = _state.Sync.SyncStatus;
         _authState = _state.Sync.AuthState;
         _templateStatus = "Local message suggestion generator ready.";
+        _templateDisplayName = string.IsNullOrWhiteSpace(_state.Preferences.TemplateDisplayName)
+            ? Environment.UserName
+            : _state.Preferences.TemplateDisplayName;
 
         PreviewCommand = new RelayCommand(() =>
         {
@@ -98,6 +119,13 @@ public sealed class MainViewModel : ViewModelBase
         SelectTrustNavyCommand = new RelayCommand(() => SelectThemePaletteAsync(ThemePalette.TrustNavy));
         SelectTealMintCommand = new RelayCommand(() => SelectThemePaletteAsync(ThemePalette.TealMint));
         SelectPremiumGoldCommand = new RelayCommand(() => SelectThemePaletteAsync(ThemePalette.PremiumGold));
+        NewMessageTemplateCommand = new RelayCommand(NewMessageTemplateAsync);
+        SaveMessageTemplateCommand = new RelayCommand(SaveMessageTemplateAsync, () => !string.IsNullOrWhiteSpace(TemplateName));
+        DeleteMessageTemplateCommand = new RelayCommand(DeleteMessageTemplateAsync, () => SelectedMessageTemplate is not null);
+        PreviewMessageTemplateCommand = new RelayCommand(PreviewMessageTemplateAsync, () => SelectedMessageTemplate is not null || !string.IsNullOrWhiteSpace(TemplateName));
+        CheckForUpdatesCommand = new RelayCommand(() => CheckForUpdatesAsync(force: true));
+        OpenReleasePageCommand = new RelayCommand(OpenReleasePageAsync, () => IsUpdateAvailable);
+        SkipReleaseCommand = new RelayCommand(SkipReleaseAsync, () => IsUpdateAvailable);
 
         RecalculateWindow();
         PreviewText = BuildPreviewText(BuildPreview());
@@ -108,10 +136,12 @@ public sealed class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(ThemePaletteText));
         OnPropertyChanged(nameof(ThemePaletteDescription));
         OnPalettePreviewChanged();
+        SelectedMessageTemplate = MessageTemplates.FirstOrDefault();
     }
 
     public ObservableCollection<ScheduleDayViewModel> ScheduleDays { get; }
     public ObservableCollection<string> RecentActivity { get; }
+    public ObservableCollection<MessageTemplate> MessageTemplates { get; }
     public IReadOnlyList<string> AudienceScopeDisplayNames { get; }
     public IReadOnlyList<TemplateTargetProfile> TemplateTargets { get; }
     public IReadOnlyList<ThemePalette> ThemePalettes { get; }
@@ -127,6 +157,16 @@ public sealed class MainViewModel : ViewModelBase
     public RelayCommand SelectTrustNavyCommand { get; }
     public RelayCommand SelectTealMintCommand { get; }
     public RelayCommand SelectPremiumGoldCommand { get; }
+    public RelayCommand NewMessageTemplateCommand { get; }
+    public RelayCommand SaveMessageTemplateCommand { get; }
+    public RelayCommand DeleteMessageTemplateCommand { get; }
+    public RelayCommand PreviewMessageTemplateCommand { get; }
+    public RelayCommand CheckForUpdatesCommand { get; }
+    public RelayCommand OpenReleasePageCommand { get; }
+    public RelayCommand SkipReleaseCommand { get; }
+
+    public string CurrentVersionText => $"Current version: {GetCurrentVersion()}";
+    public string SupportedTemplateVariables => "{StartDate}, {StartTime}, {ReturnDate}, {ReturnTime}, {Duration}, {UserName}";
 
     public string ThemeModeText => _isDarkMode ? "Dark mode" : "Light mode";
     public string ToggleThemeText => _isDarkMode ? "Use light mode" : "Use dark mode";
@@ -416,6 +456,102 @@ public sealed class MainViewModel : ViewModelBase
         private set => SetProperty(ref _isOnboardingVisible, value);
     }
 
+    public MessageTemplate? SelectedMessageTemplate
+    {
+        get => _selectedMessageTemplate;
+        set
+        {
+            if (!SetProperty(ref _selectedMessageTemplate, value))
+            {
+                return;
+            }
+
+            if (value is not null)
+            {
+                TemplateName = value.Name;
+                TemplateInternalText = value.InternalTemplate;
+                TemplateExternalText = value.ExternalTemplate;
+                TemplateStatus = $"Editing saved template: {value.Name}.";
+            }
+
+            DeleteMessageTemplateCommand.RaiseCanExecuteChanged();
+            PreviewMessageTemplateCommand.RaiseCanExecuteChanged();
+        }
+    }
+
+    public string TemplateName
+    {
+        get => _templateName;
+        set
+        {
+            if (SetProperty(ref _templateName, value))
+            {
+                SaveMessageTemplateCommand.RaiseCanExecuteChanged();
+                PreviewMessageTemplateCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public string TemplateInternalText
+    {
+        get => _templateInternalText;
+        set => SetProperty(ref _templateInternalText, value);
+    }
+
+    public string TemplateExternalText
+    {
+        get => _templateExternalText;
+        set => SetProperty(ref _templateExternalText, value);
+    }
+
+    public string TemplateDisplayName
+    {
+        get => _templateDisplayName;
+        set
+        {
+            if (!SetProperty(ref _templateDisplayName, value))
+            {
+                return;
+            }
+
+            _state.Preferences.TemplateDisplayName = value;
+            QueueSaveSettings();
+        }
+    }
+
+    public bool IsUpdateAvailable
+    {
+        get => _isUpdateAvailable;
+        private set
+        {
+            if (SetProperty(ref _isUpdateAvailable, value))
+            {
+                OpenReleasePageCommand.RaiseCanExecuteChanged();
+                SkipReleaseCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public string UpdateNotificationText
+    {
+        get => _updateNotificationText;
+        private set => SetProperty(ref _updateNotificationText, value);
+    }
+
+    public string UpdateReleaseNotes
+    {
+        get => _updateReleaseNotes;
+        private set => SetProperty(ref _updateReleaseNotes, value);
+    }
+
+    public string UpdateStatusText
+    {
+        get => _updateStatusText;
+        private set => SetProperty(ref _updateStatusText, value);
+    }
+
+    public Task InitializeAsync() => CheckForUpdatesAsync(force: false);
+
     public void RestoreWindowPlacement(Window window)
     {
         var preferences = _state.Preferences;
@@ -454,6 +590,218 @@ public sealed class MainViewModel : ViewModelBase
         PreviewText = BuildPreviewText(BuildPreview());
         QueueSaveSettings();
         MarkGeneratedTemplateStale("Schedule changed; regenerate the template preview before applying.");
+    }
+
+    private Task NewMessageTemplateAsync()
+    {
+        SelectedMessageTemplate = null;
+        TemplateName = "New template";
+        TemplateInternalText = string.Empty;
+        TemplateExternalText = string.Empty;
+        TemplateStatus = $"Enter template text. Available variables: {SupportedTemplateVariables}.";
+        return Task.CompletedTask;
+    }
+
+    private Task SaveMessageTemplateAsync()
+    {
+        var name = TemplateName.Trim();
+        if (MessageTemplates.Any(template =>
+                template != SelectedMessageTemplate &&
+                string.Equals(template.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            TemplateStatus = $"A template named '{name}' already exists. Choose a unique name.";
+            return Task.CompletedTask;
+        }
+
+        var template = SelectedMessageTemplate;
+        if (template is null)
+        {
+            template = new MessageTemplate();
+            MessageTemplates.Add(template);
+            _state.MessageTemplates.Add(template);
+        }
+
+        template.Name = name;
+        template.InternalTemplate = TemplateInternalText;
+        template.ExternalTemplate = TemplateExternalText;
+        SelectedMessageTemplate = template;
+        RefreshMessageTemplateOrder(template);
+        QueueSaveSettings();
+        AddActivity($"Saved message template '{name}'. Message bodies omitted.");
+        TemplateStatus = $"Saved template: {name}.";
+        return Task.CompletedTask;
+    }
+
+    private Task DeleteMessageTemplateAsync()
+    {
+        var template = SelectedMessageTemplate;
+        if (template is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        var confirmation = System.Windows.MessageBox.Show(
+            $"Delete the saved template '{template.Name}'?",
+            "Delete message template",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+        if (confirmation != MessageBoxResult.Yes)
+        {
+            return Task.CompletedTask;
+        }
+
+        MessageTemplates.Remove(template);
+        _state.MessageTemplates.Remove(template);
+        AddActivity($"Deleted message template '{template.Name}'. Message bodies omitted.");
+        SelectedMessageTemplate = MessageTemplates.FirstOrDefault();
+        if (SelectedMessageTemplate is null)
+        {
+            TemplateName = string.Empty;
+            TemplateInternalText = string.Empty;
+            TemplateExternalText = string.Empty;
+            TemplateStatus = "No saved templates. Select New template to create one.";
+        }
+
+        QueueSaveSettings();
+        return Task.CompletedTask;
+    }
+
+    private Task PreviewMessageTemplateAsync()
+    {
+        var draft = new MessageTemplate
+        {
+            Name = string.IsNullOrWhiteSpace(TemplateName) ? "Unsaved template" : TemplateName.Trim(),
+            InternalTemplate = TemplateInternalText,
+            ExternalTemplate = TemplateExternalText
+        };
+        var unknownVariables = MessageTemplateRenderer.FindUnknownVariables(draft);
+        if (unknownVariables.Count > 0)
+        {
+            TemplateStatus = $"Unknown variables: {string.Join(", ", unknownVariables.Select(name => $"{{{name}}}"))}. Correct them before applying.";
+            _generatedTemplate = null;
+            ApplyGeneratedTemplateCommand.RaiseCanExecuteChanged();
+            return Task.CompletedTask;
+        }
+
+        _generatedTemplate = _messageTemplateRenderer.Render(draft, _currentWindow, TemplateDisplayName, DateTimeOffset.Now);
+        GeneratedInternalTemplate = _generatedTemplate.InternalTemplate;
+        GeneratedExternalTemplate = _generatedTemplate.ExternalTemplate;
+        TemplateStatus = $"Resolved preview for '{draft.Name}'. Select Apply suggestion to copy it to the {SelectedTemplateTarget} profile.";
+        ApplyGeneratedTemplateCommand.RaiseCanExecuteChanged();
+        AddActivity($"Previewed saved message template '{draft.Name}'. Message bodies omitted.");
+        return Task.CompletedTask;
+    }
+
+    private void RefreshMessageTemplateOrder(MessageTemplate selected)
+    {
+        var ordered = MessageTemplates.OrderBy(template => template.Name, StringComparer.CurrentCultureIgnoreCase).ToArray();
+        MessageTemplates.Clear();
+        foreach (var template in ordered)
+        {
+            MessageTemplates.Add(template);
+        }
+
+        SelectedMessageTemplate = null;
+        SelectedMessageTemplate = selected;
+    }
+
+    private async Task CheckForUpdatesAsync(bool force)
+    {
+        var updateState = _state.Updates;
+        UpdateStatusText = "Checking GitHub Releases...";
+        try
+        {
+            ReleaseInformation? release;
+            if (!force && updateState.LastCheckedAt is not null &&
+                DateTimeOffset.UtcNow - updateState.LastCheckedAt.Value < TimeSpan.FromHours(24) &&
+                !string.IsNullOrWhiteSpace(updateState.LatestVersion))
+            {
+                release = new ReleaseInformation(
+                    updateState.LatestVersion,
+                    updateState.LatestName,
+                    updateState.ReleaseNotes,
+                    updateState.ReleaseUrl,
+                    updateState.LastCheckedAt.Value);
+            }
+            else
+            {
+                release = await _releaseUpdateService.GetLatestReleaseAsync();
+                updateState.LastCheckedAt = DateTimeOffset.UtcNow;
+                if (release is not null)
+                {
+                    updateState.LatestVersion = release.Version;
+                    updateState.LatestName = release.Name;
+                    updateState.ReleaseNotes = release.Notes;
+                    updateState.ReleaseUrl = release.Url;
+                }
+                QueueSaveSettings();
+            }
+
+            ShowReleaseStatus(release);
+        }
+        catch
+        {
+            UpdateStatusText = "Could not check for updates. The app remains fully usable offline.";
+            IsUpdateAvailable = false;
+        }
+    }
+
+    private void ShowReleaseStatus(ReleaseInformation? release)
+    {
+        var currentVersionText = GetCurrentVersion();
+        if (release is null ||
+            !SemanticVersion.TryParse(currentVersionText, out var currentVersion) ||
+            !SemanticVersion.TryParse(release.Version, out var latestVersion))
+        {
+            UpdateStatusText = $"No newer public release was found. Current version: {currentVersionText}.";
+            IsUpdateAvailable = false;
+            return;
+        }
+
+        var isNewer = latestVersion.CompareTo(currentVersion) > 0;
+        var isSkipped = string.Equals(_state.Updates.SkippedVersion, release.Version, StringComparison.OrdinalIgnoreCase);
+        IsUpdateAvailable = isNewer && !isSkipped;
+        UpdateStatusText = isNewer
+            ? isSkipped
+                ? $"Version {release.Version} is available but has been skipped."
+                : $"Version {release.Version} is available."
+            : $"OOFSponderModern is up to date ({currentVersionText}).";
+        UpdateNotificationText = $"{release.Name} is available. You are using {currentVersionText}.";
+        UpdateReleaseNotes = TruncateReleaseNotes(release.Notes);
+    }
+
+    private Task OpenReleasePageAsync()
+    {
+        if (Uri.TryCreate(_state.Updates.ReleaseUrl, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps)
+        {
+            Process.Start(new ProcessStartInfo(uri.ToString()) { UseShellExecute = true });
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private Task SkipReleaseAsync()
+    {
+        _state.Updates.SkippedVersion = _state.Updates.LatestVersion;
+        IsUpdateAvailable = false;
+        UpdateStatusText = $"Version {_state.Updates.LatestVersion} skipped. Future versions will still be shown.";
+        QueueSaveSettings();
+        AddActivity($"Skipped update notification for version {_state.Updates.LatestVersion}.");
+        return Task.CompletedTask;
+    }
+
+    private static string GetCurrentVersion()
+    {
+        var version = Assembly.GetEntryAssembly()?.GetName().Version ?? new Version(0, 1, 0);
+        return $"{version.Major}.{version.Minor}.{Math.Max(0, version.Build)}";
+    }
+
+    private static string TruncateReleaseNotes(string notes)
+    {
+        var normalized = string.IsNullOrWhiteSpace(notes)
+            ? "No release notes were provided."
+            : notes.Replace("\r", string.Empty).Trim();
+        return normalized.Length <= 600 ? normalized : string.Concat(normalized.AsSpan(0, 597), "...");
     }
 
     private async Task GenerateTemplateAsync()

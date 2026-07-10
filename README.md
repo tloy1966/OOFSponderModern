@@ -13,6 +13,7 @@ It is a Windows WPF app targeting .NET 10. It does not run a background schedule
 - Weekly working-hours editor with off-work days and 30-minute adjustment buttons.
 - Optional linked start/end adjustments that preserve the workday duration.
 - Primary and Extended internal/external message profiles.
+- Named local message templates with schedule-aware variables and resolved previews.
 - External audience choices: `None`, `Contacts Only`, and `All External`.
 - Sanitized review-before-apply prompt and result banner.
 - Microsoft Graph readback of current automatic-reply status without importing or exposing message bodies.
@@ -20,6 +21,7 @@ It is a Windows WPF app targeting .NET 10. It does not run a background schedule
 - Light/dark mode with Productivity Blue, Trust Navy, Teal Mint, and Premium Gold palettes.
 - First-run guidance, automatic local settings persistence, and single-instance startup.
 - DST-aware calculation of future local working times.
+- Non-blocking GitHub Release update notifications with no automatic download or install.
 
 ## Credits / Origin
 
@@ -95,6 +97,15 @@ Audience Scope controls external replies only:
 
 Internal users always receive the selected profile's internal reply.
 
+Named templates can be created, edited, and deleted in the Messages tab. Templates are stored locally and support these variables:
+
+- `{StartDate}` and `{StartTime}`
+- `{ReturnDate}` and `{ReturnTime}`
+- `{Duration}`
+- `{UserName}`
+
+Select **Resolve preview** to replace variables using the current calculated OOF window. Unknown variables are reported instead of being silently removed. Select **Apply suggestion** to copy the resolved text into the selected Primary or Extended profile; this does not update Microsoft 365 until **Apply to M365** is confirmed.
+
 ### Configuration
 
 Configuration is grouped by purpose:
@@ -103,6 +114,12 @@ Configuration is grouped by purpose:
 - Schedule Behavior: linked start/end time adjustment.
 - Microsoft 365 Safety: review behavior and selected apply profile.
 - Local App Settings: persistence and centered window behavior.
+
+### Updates
+
+After startup, the app checks the repository's latest public GitHub Release without blocking the UI. Results are cached for 24 hours. When a newer stable release is available, the app shows its release notes and a link to the HTTPS GitHub Release page. A version can be skipped without hiding later releases.
+
+The app does not silently download, install, or execute updates. Use **Check for updates** under Configuration to perform a manual check.
 
 ### Sync / Diagnostics
 
@@ -136,7 +153,7 @@ User settings are stored at:
 %APPDATA%\OOFSponderModern\usersettings.json
 ```
 
-The file contains the weekly schedule, messages, audience, selected profiles, theme, palette, linked-time preference, first-run guidance state, window size, sync state, and recent sanitized activity. Most edits are saved after a short debounce, with a final save when the main window closes.
+The file contains the weekly schedule, messages, named templates, template display name, audience, selected profiles, theme, palette, linked-time preference, first-run guidance state, window size, update-check metadata, sync state, and recent sanitized activity. Most edits are saved after a short debounce, with a final save when the main window closes.
 
 Authentication tokens are cached separately by MSAL at:
 

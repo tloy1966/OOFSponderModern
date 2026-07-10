@@ -13,10 +13,23 @@ public partial class MainWindow : Window
             new FileSettingsService(),
             new SchedulerService(),
             new GraphMailboxSettingsClient(),
-            new LocalOofTemplateGenerator());
+            new LocalOofTemplateGenerator(),
+            new MessageTemplateRenderer(),
+            new GitHubReleaseUpdateService());
         if (DataContext is MainViewModel viewModel)
         {
             viewModel.RestoreWindowPlacement(this);
+        }
+
+        Loaded += MainWindow_Loaded;
+    }
+
+    private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
+    {
+        Loaded -= MainWindow_Loaded;
+        if (DataContext is MainViewModel viewModel)
+        {
+            await viewModel.InitializeAsync();
         }
     }
 

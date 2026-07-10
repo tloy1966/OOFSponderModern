@@ -8,6 +8,8 @@ public sealed class UserPreferences
     public TemplateTargetProfile SelectedTemplateTarget { get; set; } = TemplateTargetProfile.Primary;
     public TemplateTargetProfile SelectedApplyProfile { get; set; } = TemplateTargetProfile.Primary;
     public bool IsOnboardingDismissed { get; set; }
+    public string TemplateDisplayName { get; set; } = Environment.UserName;
+    public bool AreDefaultMessageTemplatesInitialized { get; set; }
     public double? WindowWidth { get; set; }
     public double? WindowHeight { get; set; }
 }

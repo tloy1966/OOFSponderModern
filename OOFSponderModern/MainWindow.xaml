@@ -12,6 +12,7 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
@@ -40,7 +41,25 @@
                 </Grid>
             </Border>
 
-            <UniformGrid Grid.Row="2" Columns="5" Margin="0,0,0,18">
+            <Border Grid.Row="2" Visibility="{Binding IsUpdateAvailable, Converter={StaticResource BooleanToVisibilityConverter}}" Background="{DynamicResource AccentSoftBrush}" CornerRadius="8" Padding="14" Margin="0,0,0,18">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="Update available" FontSize="17" FontWeight="SemiBold" Foreground="{DynamicResource AccentTextBrush}" />
+                        <TextBlock Text="{Binding UpdateNotificationText}" Foreground="{DynamicResource AccentTextBrush}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                        <TextBlock Text="{Binding UpdateReleaseNotes}" Foreground="{DynamicResource AccentTextBrush}" TextWrapping="Wrap" MaxHeight="92" Margin="0,6,0,0" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="18,0,0,0" VerticalAlignment="Center">
+                        <Button Content="View release" Command="{Binding OpenReleasePageCommand}" ToolTip="Open the verified HTTPS GitHub Release page in your browser." />
+                        <Button Content="Skip this version" Command="{Binding SkipReleaseCommand}" Margin="8,0,0,0" ToolTip="Hide this version. A later release will still be shown." />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <UniformGrid Grid.Row="3" Columns="5" Margin="0,0,0,18">
                 <Border Style="{StaticResource StatusCardStyle}">
                     <StackPanel>
                         <TextBlock Text="Current mode" Style="{StaticResource LabelTextStyle}" />
@@ -73,7 +92,7 @@
                 </Border>
             </UniformGrid>
 
-            <TabControl x:Name="FeatureTabs" Grid.Row="3">
+            <TabControl x:Name="FeatureTabs" Grid.Row="4">
                 <TabItem Header="Schedule">
                     <Grid Margin="0,16,0,0">
                         <Grid.ColumnDefinitions>
@@ -163,6 +182,7 @@
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -235,6 +255,48 @@
                                 </StackPanel>
                                 <Border Grid.Column="2" Background="{DynamicResource AccentSoftBrush}" CornerRadius="8" Padding="14">
                                     <TextBlock Text="{Binding TemplateStatus}" TextWrapping="Wrap" Foreground="{DynamicResource AccentTextBrush}" />
+                                </Border>
+                            </Grid>
+                        </Border>
+
+                        <Border Grid.Row="2" Grid.ColumnSpan="3" Style="{StaticResource CardStyle}" Margin="0,18,0,0">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="300" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Margin="0,0,18,0">
+                                    <TextBlock Text="Saved message templates" Style="{StaticResource SectionTitleStyle}" />
+                                    <TextBlock Text="Template" Style="{StaticResource LabelTextStyle}" />
+                                    <ComboBox ItemsSource="{Binding MessageTemplates}" SelectedItem="{Binding SelectedMessageTemplate}" DisplayMemberPath="Name" ToolTip="Select a saved message template." />
+                                    <TextBlock Text="Template name" Style="{StaticResource LabelTextStyle}" />
+                                    <TextBox Text="{Binding TemplateName, UpdateSourceTrigger=PropertyChanged}" ToolTip="A unique name for this saved template." />
+                                    <TextBlock Text="{}{UserName} display name" Style="{StaticResource LabelTextStyle}" />
+                                    <TextBox Text="{Binding TemplateDisplayName, UpdateSourceTrigger=LostFocus}" ToolTip="Used locally to resolve the UserName template variable." />
+                                    <TextBlock Text="Available variables" Style="{StaticResource LabelTextStyle}" />
+                                    <TextBlock Text="{Binding SupportedTemplateVariables}" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,6,0,12" />
+                                    <WrapPanel>
+                                        <Button Content="New" Command="{Binding NewMessageTemplateCommand}" ToolTip="Start a new message template." />
+                                        <Button Content="Save" Command="{Binding SaveMessageTemplateCommand}" Margin="6,0,0,0" ToolTip="Save this named template locally." />
+                                        <Button Content="Delete" Command="{Binding DeleteMessageTemplateCommand}" Margin="6,0,0,0" ToolTip="Delete the selected template after confirmation." />
+                                    </WrapPanel>
+                                    <Button Content="Resolve preview" Command="{Binding PreviewMessageTemplateCommand}" Margin="0,8,0,0" ToolTip="Resolve variables into the suggestion preview. This does not contact Microsoft 365." />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Margin="0,0,18,0">
+                                    <TextBlock Text="Internal template" Style="{StaticResource SectionTitleStyle}" />
+                                    <TextBox Text="{Binding TemplateInternalText, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" MinHeight="220" ToolTip="Internal message template. Supported variables are resolved only in preview and when copied to a profile." />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="External template" Style="{StaticResource SectionTitleStyle}" />
+                                    <TextBox Text="{Binding TemplateExternalText, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" MinHeight="220" ToolTip="External message template. Audience scope still controls who receives it." />
+                                </StackPanel>
+                                <Border Grid.Row="1" Grid.ColumnSpan="3" Background="{DynamicResource PanelSubtleBrush}" CornerRadius="8" Padding="12" Margin="0,14,0,0">
+                                    <TextBlock Text="Templates are saved locally. Resolve preview replaces supported variables using the current OOF window; Apply suggestion then copies the resolved text to the selected Primary or Extended profile." Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" />
                                 </Border>
                             </Grid>
                         </Border>
@@ -335,6 +397,10 @@
                                 <TextBlock Text="OOFSponderModern saves schedule, messages, theme, selected profiles, checklist state, and window size under your AppData profile." Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,8,0,14" />
                                 <TextBlock Text="Window placement" Style="{StaticResource LabelTextStyle}" />
                                 <TextBlock Text="The app opens centered and restores only the previous window size." Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,8,0,0" />
+                                <TextBlock Text="Updates" Style="{StaticResource LabelTextStyle}" Margin="0,18,0,0" />
+                                <TextBlock Text="{Binding CurrentVersionText}" Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,8,0,0" />
+                                <TextBlock Text="{Binding UpdateStatusText}" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,6,0,10" />
+                                <Button Content="Check for updates" Command="{Binding CheckForUpdatesCommand}" HorizontalAlignment="Left" ToolTip="Check the latest public GitHub Release. No update is downloaded automatically." />
                             </StackPanel>
                         </Border>
                     </Grid>

@@ -1,5 +1,7 @@
 using OOFSponderModern.Models;
 using OOFSponderModern.Services;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 var tests = new SchedulerServiceTests();
 tests.BeforeWorkingHoursStartsAtNow();
@@ -9,7 +11,12 @@ tests.AllOffWorkUsesOneWeekWindow();
 tests.LinkedEndAdjustmentShiftsStartTime();
 tests.NextWorkingStartUsesPostDstOffset();
 tests.DefaultSettingsUseNineToSixWeekdays();
-Console.WriteLine("OOFSponderModern scheduler tests passed.");
+tests.DefaultSettingsIncludeNamedMessageTemplates();
+tests.MessageTemplateVariablesResolveFromCurrentWindow();
+tests.MessageTemplateUnknownVariablesAreReported();
+tests.SemanticVersionsSortCorrectly();
+tests.SettingsCollectionsRoundTripThroughJson();
+Console.WriteLine("OOFSponderModern regression tests passed.");
 
 internal sealed class SchedulerServiceTests
 {
@@ -95,6 +102,86 @@ internal sealed class SchedulerServiceTests
             AssertEqual(new TimeSpan(18, 0, 0), weekday.EndTime, $"{weekday.DayOfWeek} end");
             AssertEqual(false, weekday.IsOffWork, $"{weekday.DayOfWeek} off-work flag");
         }
+    }
+
+    public void DefaultSettingsIncludeNamedMessageTemplates()
+    {
+        var state = new InMemorySettingsService().LoadAsync().GetAwaiter().GetResult();
+        var names = state.MessageTemplates.Select(template => template.Name).ToArray();
+
+        AssertEqual(true, names.Contains("Vacation"), "Vacation template");
+        AssertEqual(true, names.Contains("Weekend"), "Weekend template");
+        AssertEqual(true, names.Contains("Holiday"), "Holiday template");
+        AssertEqual(true, names.Contains("Business Travel"), "Business Travel template");
+    }
+
+    public void MessageTemplateVariablesResolveFromCurrentWindow()
+    {
+        var window = new OofWindow(
+            new DateTimeOffset(2026, 7, 10, 18, 0, 0, TimeSpan.FromHours(8)),
+            new DateTimeOffset(2026, 7, 13, 9, 0, 0, TimeSpan.FromHours(8)),
+            "test");
+        var template = new MessageTemplate
+        {
+            Name = "Test",
+            InternalTemplate = "{UserName}: {StartDate} {StartTime} to {ReturnDate} {ReturnTime} ({Duration})",
+            ExternalTemplate = "Back {ReturnDate}"
+        };
+
+        var result = new MessageTemplateRenderer().Render(template, window, "Taylor", window.Start);
+
+        AssertEqual(true, result.InternalTemplate.Contains("Taylor"), "Resolved user name");
+        AssertEqual(true, result.InternalTemplate.Contains("2d 15h"), "Resolved duration");
+        AssertEqual(false, result.InternalTemplate.Contains("{ReturnDate}"), "Resolved return date token");
+    }
+
+    public void MessageTemplateUnknownVariablesAreReported()
+    {
+        var template = new MessageTemplate
+        {
+            InternalTemplate = "Known {UserName}; unknown {ManagerName} and {managername}.",
+            ExternalTemplate = "{Unsupported}"
+        };
+
+        var unknown = MessageTemplateRenderer.FindUnknownVariables(template);
+
+        AssertEqual(2, unknown.Count, "Unknown variable count");
+        AssertEqual(true, unknown.Contains("ManagerName", StringComparer.OrdinalIgnoreCase), "ManagerName warning");
+        AssertEqual(true, unknown.Contains("Unsupported", StringComparer.OrdinalIgnoreCase), "Unsupported warning");
+    }
+
+    public void SemanticVersionsSortCorrectly()
+    {
+        AssertEqual(true, SemanticVersion.TryParse("v0.10.0", out var newer), "Parse v0.10.0");
+        AssertEqual(true, SemanticVersion.TryParse("0.9.0", out var older), "Parse 0.9.0");
+        AssertEqual(true, SemanticVersion.TryParse("0.10.0-beta.1", out var prerelease), "Parse prerelease");
+        AssertEqual(true, newer.CompareTo(older) > 0, "0.10.0 greater than 0.9.0");
+        AssertEqual(true, newer.CompareTo(prerelease) > 0, "Stable greater than prerelease");
+        AssertEqual(false, SemanticVersion.TryParse("release-one", out _), "Reject invalid version");
+    }
+
+    public void SettingsCollectionsRoundTripThroughJson()
+    {
+        var state = new AppState { SchemaVersion = 2 };
+        state.WeeklySchedule.Add(new ScheduleDay
+        {
+            DayOfWeek = DayOfWeek.Wednesday,
+            StartTime = new TimeSpan(7, 30, 0),
+            EndTime = new TimeSpan(16, 30, 0)
+        });
+        state.MessageTemplates.Add(new MessageTemplate { Name = "Custom template" });
+        var options = new JsonSerializerOptions
+        {
+            Converters = { new JsonStringEnumConverter() }
+        };
+
+        var roundTripped = JsonSerializer.Deserialize<AppState>(JsonSerializer.Serialize(state, options), options)
+            ?? throw new InvalidOperationException("Settings round trip returned null.");
+
+        AssertEqual(1, roundTripped.WeeklySchedule.Count, "Persisted schedule count");
+        AssertEqual(new TimeSpan(7, 30, 0), roundTripped.WeeklySchedule[0].StartTime, "Persisted custom start");
+        AssertEqual(1, roundTripped.MessageTemplates.Count, "Persisted template count");
+        AssertEqual("Custom template", roundTripped.MessageTemplates[0].Name, "Persisted template name");
     }
 
     private static List<ScheduleDay> CreateDefaultSchedule(bool allOffWork = false)

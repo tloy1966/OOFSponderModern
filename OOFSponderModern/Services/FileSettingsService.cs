@@ -73,7 +73,48 @@ public sealed class FileSettingsService : ISettingsService
         state.Messages ??= new MessageProfile();
         state.Sync ??= new SyncState();
         state.Preferences ??= new UserPreferences();
+        state.Updates ??= new UpdateState();
+        state.WeeklySchedule ??= new List<ScheduleDay>();
+        state.MessageTemplates ??= new List<MessageTemplate>();
         EnsureSchedule(state);
+        MigrateState(state);
+        EnsureDefaultMessageTemplates(state);
+    }
+
+    private static void MigrateState(AppState state)
+    {
+        if (state.SchemaVersion >= 2)
+        {
+            return;
+        }
+
+        foreach (var template in InMemorySettingsService.CreateDefaultMessageTemplates())
+        {
+            state.MessageTemplates.Add(template);
+        }
+
+        state.Preferences.TemplateDisplayName = string.IsNullOrWhiteSpace(state.Preferences.TemplateDisplayName)
+            ? Environment.UserName
+            : state.Preferences.TemplateDisplayName;
+        state.SchemaVersion = 2;
+    }
+
+    private static void EnsureDefaultMessageTemplates(AppState state)
+    {
+        if (state.Preferences.AreDefaultMessageTemplatesInitialized)
+        {
+            return;
+        }
+
+        if (state.MessageTemplates.Count == 0)
+        {
+            foreach (var template in InMemorySettingsService.CreateDefaultMessageTemplates())
+            {
+                state.MessageTemplates.Add(template);
+            }
+        }
+
+        state.Preferences.AreDefaultMessageTemplatesInitialized = true;
     }
 
     private static void EnsureSchedule(AppState state)
