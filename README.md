@@ -4,6 +4,20 @@ OOFSponder schedules Microsoft 365 automatic replies from your normal working ho
 
 The app is now centered on **OOFSponderModern**, a Windows WPF app distributed from GitHub Releases.
 
+## Credits / Origin
+
+This project is inspired by and references the original [EvanBasalik/OOFSponder](https://github.com/EvanBasalik/OOFSponder) project.
+
+This repository is an AI-assisted modern rewrite focused on:
+
+- A modern WPF user experience.
+- GitHub Releases instead of ClickOnce deployment.
+- Microsoft Graph based Microsoft 365 automatic reply updates.
+- Light/dark mode and selectable color templates.
+- An `AI Template` feature for generating local OOF message suggestions.
+
+The AI template feature currently generates local suggestions only; it does not call an external AI service.
+
 ## Install
 
 Download the latest `OOFSponderModern-win-x64.zip` from GitHub Releases, extract it, and run `OOFSponderModern.exe`.
