@@ -243,17 +243,22 @@
                 </TabItem>
 
                 <TabItem Header="Configuration">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <Grid Margin="0,16,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="460" />
+                            <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
 
-                        <Border Style="{StaticResource CardStyle}" Margin="0,0,18,0">
+                        <Border Style="{StaticResource CardStyle}" Margin="0,0,18,18">
                             <StackPanel>
                                 <TextBlock Text="Appearance" Style="{StaticResource SectionTitleStyle}" />
-                                <TextBlock Text="Color template" Style="{StaticResource LabelTextStyle}" />
-                                <TextBlock Text="{Binding ThemePaletteText}" Foreground="{DynamicResource TextPrimaryBrush}" FontWeight="SemiBold" Margin="0,2,0,8" />
+                                <TextBlock Text="App theme only" Style="{StaticResource LabelTextStyle}" />
+                                <TextBlock Text="{Binding ThemePaletteText}" Foreground="{DynamicResource TextPrimaryBrush}" FontWeight="SemiBold" Margin="0,2,0,10" />
                                 <UniformGrid Columns="4" Margin="0,0,0,18">
                                     <Button Command="{Binding SelectProductivityBlueCommand}" Style="{StaticResource PaletteButtonStyle}" ToolTip="Productivity Blue: balanced blue palette for quiet productivity workflows.">
                                         <StackPanel>
@@ -304,13 +309,36 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Grid.Column="1" Style="{StaticResource CardStyle}">
+                        <Border Grid.Column="1" Style="{StaticResource CardStyle}" Margin="0,0,0,18">
                             <StackPanel>
-                                <TextBlock Text="Configuration notes" Style="{StaticResource SectionTitleStyle}" />
-                                <TextBlock Text="Appearance settings only affect this app UI. Microsoft 365 automatic reply behavior is controlled from Schedule and Messages." Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" />
+                                <TextBlock Text="Schedule Behavior" Style="{StaticResource SectionTitleStyle}" />
+                                <TextBlock Text="Time editing" Style="{StaticResource LabelTextStyle}" />
+                                <CheckBox Content="Link start/end time" IsChecked="{Binding IsLinkedTimeAdjustmentEnabled}" Margin="0,8,0,10" ToolTip="When enabled, changing start or end time shifts the other time by the same amount." />
+                                <TextBlock Text="{Binding LinkedTimeAdjustmentText}" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Grid.Row="1" Style="{StaticResource CardStyle}" Margin="0,0,18,0">
+                            <StackPanel>
+                                <TextBlock Text="Microsoft 365 Safety" Style="{StaticResource SectionTitleStyle}" />
+                                <TextBlock Text="Apply behavior" Style="{StaticResource LabelTextStyle}" />
+                                <TextBlock Text="Apply to M365 shows a review prompt before Microsoft Graph is updated. Message bodies are omitted from diagnostics and activity logs." Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,8,0,14" />
+                                <TextBlock Text="Current apply profile" Style="{StaticResource LabelTextStyle}" />
+                                <TextBlock Text="{Binding ApplyProfileText}" Foreground="{DynamicResource TextPrimaryBrush}" FontWeight="SemiBold" Margin="0,8,0,0" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Grid.Row="1" Grid.Column="1" Style="{StaticResource CardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Local App Settings" Style="{StaticResource SectionTitleStyle}" />
+                                <TextBlock Text="Saved on this PC" Style="{StaticResource LabelTextStyle}" />
+                                <TextBlock Text="OOFSponderModern saves schedule, messages, theme, selected profiles, checklist state, and window size under your AppData profile." Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,8,0,14" />
+                                <TextBlock Text="Window placement" Style="{StaticResource LabelTextStyle}" />
+                                <TextBlock Text="The app opens centered and restores only the previous window size." Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,8,0,0" />
                             </StackPanel>
                         </Border>
                     </Grid>
+                    </ScrollViewer>
                 </TabItem>
 
                 <TabItem Header="Sync / Diagnostics">
