@@ -4,6 +4,10 @@ OOFSponderModern calculates the next out-of-office interval from your weekly wor
 
 It is a Windows WPF app targeting .NET 10. It does not run a background scheduler or automatically create later recurring intervals. Reopen the app and apply again when a new interval is needed.
 
+## Screenshot
+
+![OOFSponderModern schedule and Microsoft 365 apply preview](docs/images/oofspondermodern-schedule.png)
+
 ## Features
 
 - Weekly working-hours editor with off-work days and 30-minute adjustment buttons.
