@@ -1,0 +1,29 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="surface" x1="112" y1="88" x2="912" y2="936" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B1220"/>
+      <stop offset="1" stop-color="#0F766E"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="244" y1="198" x2="762" y2="812" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#E0F2FE"/>
+      <stop offset="0.44" stop-color="#38BDF8"/>
+      <stop offset="1" stop-color="#2DD4BF"/>
+    </linearGradient>
+    <filter id="shadow" x="128" y="130" width="768" height="780" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="26" stdDeviation="34" flood-color="#020617" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+
+  <rect x="72" y="72" width="880" height="880" rx="220" fill="url(#surface)"/>
+  <rect x="94" y="94" width="836" height="836" rx="202" stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="20"/>
+
+  <g filter="url(#shadow)">
+    <circle cx="512" cy="512" r="270" stroke="url(#mark)" stroke-width="116"/>
+    <path d="M512 258C371.72 258 258 371.72 258 512" stroke="#FFFFFF" stroke-opacity="0.86" stroke-width="42" stroke-linecap="round"/>
+    <path d="M512 392V520L610 604" stroke="#FFFFFF" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="512" cy="512" r="30" fill="#FFFFFF"/>
+  </g>
+
+  <circle cx="742" cy="286" r="62" fill="#FBBF24"/>
+  <circle cx="742" cy="286" r="34" fill="#0B1220" fill-opacity="0.16"/>
+</svg>

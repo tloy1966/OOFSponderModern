@@ -1,0 +1,69 @@
+name: Release OOFSponderModern
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release-modern:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Run modern scheduler tests
+        shell: pwsh
+        run: dotnet run --project .\OOFSponderModern.Tests\OOFSponderModern.Tests.csproj --configuration Release
+
+      - name: Build solution
+        shell: pwsh
+        run: dotnet build .\OOFSponder.sln --configuration Release
+
+      - name: Publish modern app
+        shell: pwsh
+        run: |
+          $version = ""
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME.StartsWith("v")) {
+            $version = $env:GITHUB_REF_NAME.TrimStart("v")
+          }
+
+          .\SupportingFiles\publish-modern-github.ps1 -Configuration Release -Runtime win-x64 -Version $version
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OOFSponderModern-win-x64
+          path: artifacts/OOFSponderModern-win-x64.zip
+
+      - name: Publish GitHub release
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $artifact = "artifacts/OOFSponderModern-win-x64.zip"
+          $tag = $env:GITHUB_REF_NAME
+          $notes = @"
+          OOFSponderModern Windows x64 release.
+
+          This build is distributed via GitHub Releases, not ClickOnce.
+          "@
+
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $artifact --clobber
+          }
+          else {
+            gh release create $tag $artifact --title "OOFSponderModern $tag" --notes $notes
+          }
