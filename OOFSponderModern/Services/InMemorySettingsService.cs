@@ -4,7 +4,21 @@ namespace OOFSponderModern.Services;
 
 public sealed class InMemorySettingsService : ISettingsService
 {
+    private AppState? _state;
+
     public Task<AppState> LoadAsync(CancellationToken cancellationToken = default)
+    {
+        _state ??= CreateDefaultState();
+        return Task.FromResult(_state);
+    }
+
+    public Task SaveAsync(AppState state, CancellationToken cancellationToken = default)
+    {
+        _state = state;
+        return Task.CompletedTask;
+    }
+
+    internal static AppState CreateDefaultState()
     {
         var state = new AppState
         {
@@ -37,6 +51,6 @@ public sealed class InMemorySettingsService : ISettingsService
 
         state.Sync.RecentActivity.Add("Loaded in-memory sample settings. Future migration target: %AppData%\\OOFSponder\\usersettings.json.");
         state.Sync.RecentActivity.Add("Microsoft 365 apply mode enabled. Applying will update mailbox automatic replies.");
-        return Task.FromResult(state);
+        return state;
     }
 }

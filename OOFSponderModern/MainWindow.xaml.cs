@@ -10,7 +10,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = new MainViewModel(
-            new InMemorySettingsService(),
+            new FileSettingsService(),
             new SchedulerService(),
             new GraphMailboxSettingsClient(),
             new LocalOofTemplateGenerator());

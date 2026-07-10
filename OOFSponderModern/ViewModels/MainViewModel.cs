@@ -12,7 +12,9 @@ public sealed class MainViewModel : ViewModelBase
     private readonly ISchedulerService _scheduler;
     private readonly IMailboxSettingsClient _mailboxClient;
     private readonly IOofTemplateGenerator _templateGenerator;
+    private readonly ISettingsService _settingsService;
     private readonly AppState _state;
+    private CancellationTokenSource? _saveSettingsDebounce;
     private OofWindow _currentWindow;
     private GeneratedOofTemplateResult? _generatedTemplate;
     private string _currentOofMode = string.Empty;
@@ -41,6 +43,7 @@ public sealed class MainViewModel : ViewModelBase
         IMailboxSettingsClient mailboxClient,
         IOofTemplateGenerator templateGenerator)
     {
+        _settingsService = settingsService;
         _scheduler = scheduler;
         _mailboxClient = mailboxClient;
         _templateGenerator = templateGenerator;
@@ -58,6 +61,11 @@ public sealed class MainViewModel : ViewModelBase
         ThemePalettes = Enum.GetValues<ThemePalette>();
 
         _selectedAudienceScope = _state.Messages.AudienceScope;
+    _selectedTemplateTarget = _state.Preferences.SelectedTemplateTarget;
+    _selectedApplyProfile = _state.Preferences.SelectedApplyProfile;
+    _isDarkMode = _state.Preferences.IsDarkMode;
+    _isLinkedTimeAdjustmentEnabled = _state.Preferences.IsLinkedTimeAdjustmentEnabled;
+    _selectedThemePalette = _state.Preferences.ThemePalette;
         _primaryInternalMessage = _state.Messages.PrimaryInternalMessage;
         _primaryExternalMessage = _state.Messages.PrimaryExternalMessage;
         _extendedInternalMessage = _state.Messages.ExtendedInternalMessage;
@@ -85,6 +93,13 @@ public sealed class MainViewModel : ViewModelBase
 
         RecalculateWindow();
         PreviewText = BuildPreviewText(BuildPreview());
+        ApplyTheme(IsDarkMode, SelectedThemePalette);
+        OnPropertyChanged(nameof(ThemeModeText));
+        OnPropertyChanged(nameof(ToggleThemeText));
+        OnPropertyChanged(nameof(LinkedTimeAdjustmentText));
+        OnPropertyChanged(nameof(ThemePaletteText));
+        OnPropertyChanged(nameof(ThemePaletteDescription));
+        OnPalettePreviewChanged();
     }
 
     public ObservableCollection<ScheduleDayViewModel> ScheduleDays { get; }
@@ -197,6 +212,8 @@ public sealed class MainViewModel : ViewModelBase
             }
 
             OnPropertyChanged(nameof(LinkedTimeAdjustmentText));
+            _state.Preferences.IsLinkedTimeAdjustmentEnabled = value;
+            QueueSaveSettings();
             AddActivity(value
                 ? "Linked time adjustment enabled. Start time changes will shift end time."
                 : "Linked time adjustment disabled. Start and end time can be adjusted independently.");
@@ -216,7 +233,9 @@ public sealed class MainViewModel : ViewModelBase
             OnPropertyChanged(nameof(ThemePaletteText));
             OnPropertyChanged(nameof(ThemePaletteDescription));
             OnPalettePreviewChanged();
+            _state.Preferences.ThemePalette = value;
             ApplyTheme(IsDarkMode, SelectedThemePalette);
+            QueueSaveSettings();
             AddActivity($"Applied {ThemePaletteText} color template.");
         }
     }
@@ -235,6 +254,7 @@ public sealed class MainViewModel : ViewModelBase
             OnPropertyChanged(nameof(AudienceScopeText));
             OnPropertyChanged(nameof(AudienceScopeDescription));
             PreviewText = BuildPreviewText(BuildPreview());
+            QueueSaveSettings();
             MarkGeneratedTemplateStale("Audience scope changed; regenerate the template preview before applying.");
         }
     }
@@ -250,6 +270,8 @@ public sealed class MainViewModel : ViewModelBase
             }
 
             OnPropertyChanged(nameof(TemplateTargetText));
+            _state.Preferences.SelectedTemplateTarget = value;
+            QueueSaveSettings();
             MarkGeneratedTemplateStale("Target profile changed; regenerate the suggestion before applying.");
         }
     }
@@ -265,7 +287,9 @@ public sealed class MainViewModel : ViewModelBase
             }
 
             OnPropertyChanged(nameof(ApplyProfileText));
+            _state.Preferences.SelectedApplyProfile = value;
             PreviewText = BuildPreviewText(BuildPreview());
+            QueueSaveSettings();
             AddActivity($"Selected {value} profile for Microsoft 365 apply. Message bodies omitted.");
         }
     }
@@ -296,6 +320,7 @@ public sealed class MainViewModel : ViewModelBase
             if (SetProperty(ref _primaryInternalMessage, value))
             {
                 _state.Messages.PrimaryInternalMessage = value;
+                QueueSaveSettings();
             }
         }
     }
@@ -308,6 +333,7 @@ public sealed class MainViewModel : ViewModelBase
             if (SetProperty(ref _primaryExternalMessage, value))
             {
                 _state.Messages.PrimaryExternalMessage = value;
+                QueueSaveSettings();
             }
         }
     }
@@ -320,6 +346,7 @@ public sealed class MainViewModel : ViewModelBase
             if (SetProperty(ref _extendedInternalMessage, value))
             {
                 _state.Messages.ExtendedInternalMessage = value;
+                QueueSaveSettings();
             }
         }
     }
@@ -332,6 +359,7 @@ public sealed class MainViewModel : ViewModelBase
             if (SetProperty(ref _extendedExternalMessage, value))
             {
                 _state.Messages.ExtendedExternalMessage = value;
+                QueueSaveSettings();
             }
         }
     }
@@ -352,6 +380,7 @@ public sealed class MainViewModel : ViewModelBase
         ScheduleStatus = $"Schedule recalculated at {DateTimeOffset.Now:t}";
         OnPropertyChanged(nameof(AudienceScopeText));
         PreviewText = BuildPreviewText(BuildPreview());
+        QueueSaveSettings();
         MarkGeneratedTemplateStale("Schedule changed; regenerate the template preview before applying.");
     }
 
@@ -412,6 +441,7 @@ public sealed class MainViewModel : ViewModelBase
         }
 
         PreviewText = BuildPreviewText(BuildPreview());
+    QueueSaveSettings();
         AddActivity($"Applied generated message suggestion to {SelectedTemplateTarget} profile. Message bodies omitted.");
         return Task.CompletedTask;
     }
@@ -531,8 +561,10 @@ public sealed class MainViewModel : ViewModelBase
     private Task ToggleThemeAsync()
     {
         IsDarkMode = !IsDarkMode;
+        _state.Preferences.IsDarkMode = IsDarkMode;
         ApplyTheme(IsDarkMode, SelectedThemePalette);
         OnPalettePreviewChanged();
+        QueueSaveSettings();
         AddActivity($"Switched to {ThemeModeText.ToLowerInvariant()}.");
         return Task.CompletedTask;
     }
@@ -541,6 +573,31 @@ public sealed class MainViewModel : ViewModelBase
     {
         SelectedThemePalette = palette;
         return Task.CompletedTask;
+    }
+
+    private void QueueSaveSettings()
+    {
+        _saveSettingsDebounce?.Cancel();
+        _saveSettingsDebounce?.Dispose();
+        _saveSettingsDebounce = new CancellationTokenSource();
+        var token = _saveSettingsDebounce.Token;
+        _ = SaveSettingsAfterDelayAsync(token);
+    }
+
+    private async Task SaveSettingsAfterDelayAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(350, cancellationToken);
+            await _settingsService.SaveAsync(_state, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            SyncStatus = $"Settings save failed ({ex.GetType().Name})";
+        }
     }
 
     private void OnPalettePreviewChanged()

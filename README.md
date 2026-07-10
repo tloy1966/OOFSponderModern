@@ -57,6 +57,16 @@ Create a GitHub-release-ready archive locally:
 
 The zip is written to `artifacts\OOFSponderModern-win-x64.zip`.
 
+## Settings storage
+
+OOFSponderModern saves user configuration locally at:
+
+```text
+%APPDATA%\OOFSponderModern\usersettings.json
+```
+
+Saved configuration includes working hours, off-work days, message profiles, audience scope, selected apply profile, theme mode, color template, and linked time adjustment preference.
+
 ## Microsoft 365 permissions
 
 OOFSponderModern uses Microsoft authentication and Microsoft Graph with these delegated scopes:
