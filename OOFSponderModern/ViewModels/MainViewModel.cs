@@ -33,8 +33,12 @@ public sealed class MainViewModel : ViewModelBase
     private string _extendedInternalMessage = string.Empty;
     private string _extendedExternalMessage = string.Empty;
     private string _previewText = string.Empty;
+    private string _applyResultText = string.Empty;
+    private string _currentM365SettingsText = "Current Microsoft 365 automatic reply settings have not been loaded yet.";
     private bool _isDarkMode;
     private bool _isLinkedTimeAdjustmentEnabled = true;
+    private bool _isApplyResultVisible;
+    private bool _isOnboardingVisible;
     private ThemePalette _selectedThemePalette = ThemePalette.ProductivityBlue;
 
     public MainViewModel(
@@ -65,6 +69,7 @@ public sealed class MainViewModel : ViewModelBase
     _selectedApplyProfile = _state.Preferences.SelectedApplyProfile;
     _isDarkMode = _state.Preferences.IsDarkMode;
     _isLinkedTimeAdjustmentEnabled = _state.Preferences.IsLinkedTimeAdjustmentEnabled;
+    _isOnboardingVisible = !_state.Preferences.IsOnboardingDismissed;
     _selectedThemePalette = _state.Preferences.ThemePalette;
         _primaryInternalMessage = _state.Messages.PrimaryInternalMessage;
         _primaryExternalMessage = _state.Messages.PrimaryExternalMessage;
@@ -81,6 +86,9 @@ public sealed class MainViewModel : ViewModelBase
             return Task.CompletedTask;
         });
         ApplyToM365Command = new RelayCommand(ApplyToM365Async);
+        LoadCurrentM365SettingsCommand = new RelayCommand(LoadCurrentM365SettingsAsync);
+        DismissOnboardingCommand = new RelayCommand(DismissOnboardingAsync);
+        ClearApplyResultCommand = new RelayCommand(ClearApplyResultAsync);
         GenerateTemplateCommand = new RelayCommand(GenerateTemplateAsync);
         ApplyGeneratedTemplateCommand = new RelayCommand(
             ApplyGeneratedTemplateAsync,
@@ -109,6 +117,9 @@ public sealed class MainViewModel : ViewModelBase
     public IReadOnlyList<ThemePalette> ThemePalettes { get; }
     public RelayCommand PreviewCommand { get; }
     public RelayCommand ApplyToM365Command { get; }
+    public RelayCommand LoadCurrentM365SettingsCommand { get; }
+    public RelayCommand DismissOnboardingCommand { get; }
+    public RelayCommand ClearApplyResultCommand { get; }
     public RelayCommand GenerateTemplateCommand { get; }
     public RelayCommand ApplyGeneratedTemplateCommand { get; }
     public RelayCommand ToggleThemeCommand { get; }
@@ -370,6 +381,30 @@ public sealed class MainViewModel : ViewModelBase
         private set => SetProperty(ref _previewText, value);
     }
 
+    public string ApplyResultText
+    {
+        get => _applyResultText;
+        private set => SetProperty(ref _applyResultText, value);
+    }
+
+    public bool IsApplyResultVisible
+    {
+        get => _isApplyResultVisible;
+        private set => SetProperty(ref _isApplyResultVisible, value);
+    }
+
+    public string CurrentM365SettingsText
+    {
+        get => _currentM365SettingsText;
+        private set => SetProperty(ref _currentM365SettingsText, value);
+    }
+
+    public bool IsOnboardingVisible
+    {
+        get => _isOnboardingVisible;
+        private set => SetProperty(ref _isOnboardingVisible, value);
+    }
+
     public void RestoreWindowPlacement(Window window)
     {
         var preferences = _state.Preferences;
@@ -476,18 +511,20 @@ public sealed class MainViewModel : ViewModelBase
     {
         var preview = BuildPreview();
         var confirmation = System.Windows.MessageBox.Show(
-            $"Apply {preview.ActiveProfile} automatic replies to your Microsoft 365 mailbox from {preview.Window.Start:g} to {preview.Window.End:g}?",
-            "Apply to Microsoft 365",
+            BuildApplyReviewText(preview),
+            "Review Microsoft 365 update",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
         if (confirmation != MessageBoxResult.Yes)
         {
             AddActivity("Microsoft 365 apply canceled before sign-in. Message bodies omitted.");
+            ShowApplyResult("Apply canceled. No Microsoft 365 mailbox changes were sent.");
             return;
         }
 
         SyncStatus = "Applying to Microsoft 365";
         AuthState = "Connecting to Microsoft 365";
+        ShowApplyResult("Applying automatic replies to Microsoft 365...");
         AddActivity("Started Microsoft 365 apply. Message bodies omitted from diagnostics.");
 
         try
@@ -497,13 +534,57 @@ public sealed class MainViewModel : ViewModelBase
             AuthState = "Connected";
             AddActivity(result);
             PreviewText = BuildPreviewText(preview);
+            ShowApplyResult($"Applied to Microsoft 365. {preview.ActiveProfile} profile scheduled from {preview.Window.Start:g} to {preview.Window.End:g}.");
         }
         catch (Exception ex)
         {
             SyncStatus = "Microsoft 365 apply failed";
             AuthState = "Connection or Graph update failed";
-            AddActivity($"Microsoft 365 apply failed ({ex.GetType().Name}): {ToUserSafeError(ex)} Message bodies omitted.");
+            var safeError = ToUserSafeError(ex);
+            AddActivity($"Microsoft 365 apply failed ({ex.GetType().Name}): {safeError} Message bodies omitted.");
+            ShowApplyResult($"Microsoft 365 apply failed: {safeError}");
         }
+    }
+
+    private async Task LoadCurrentM365SettingsAsync()
+    {
+        SyncStatus = "Loading current Microsoft 365 automatic replies";
+        AuthState = "Connecting to Microsoft 365";
+        CurrentM365SettingsText = "Loading current mailbox settings from Microsoft Graph...";
+        AddActivity("Started loading current Microsoft 365 automatic reply settings.");
+
+        try
+        {
+            var summary = await _mailboxClient.LoadCurrentSettingsAsync();
+            CurrentM365SettingsText = BuildCurrentSettingsText(summary);
+            SyncStatus = "Current Microsoft 365 settings loaded";
+            AuthState = "Connected";
+            AddActivity($"Loaded current Microsoft 365 automatic reply settings for {summary.MailboxUser}. Message bodies omitted.");
+        }
+        catch (Exception ex)
+        {
+            var safeError = ToUserSafeError(ex);
+            CurrentM365SettingsText = $"Could not load current Microsoft 365 automatic reply settings. {safeError}";
+            SyncStatus = "Load current settings failed";
+            AuthState = "Connection or Graph read failed";
+            AddActivity($"Load current Microsoft 365 settings failed ({ex.GetType().Name}): {safeError} Message bodies omitted.");
+        }
+    }
+
+    private Task DismissOnboardingAsync()
+    {
+        IsOnboardingVisible = false;
+        _state.Preferences.IsOnboardingDismissed = true;
+        QueueSaveSettings();
+        AddActivity("First-run onboarding dismissed.");
+        return Task.CompletedTask;
+    }
+
+    private Task ClearApplyResultAsync()
+    {
+        IsApplyResultVisible = false;
+        ApplyResultText = string.Empty;
+        return Task.CompletedTask;
     }
 
     private static string ToUserSafeError(Exception ex)
@@ -560,6 +641,43 @@ public sealed class MainViewModel : ViewModelBase
         return builder.ToString();
     }
 
+    private static string BuildApplyReviewText(MailboxSettingsPreview preview)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("Review before applying to Microsoft 365");
+        builder.AppendLine();
+        builder.AppendLine($"Profile: {preview.ActiveProfile}");
+        builder.AppendLine($"Schedule: {preview.Window.Start:g} to {preview.Window.End:g}");
+        builder.AppendLine($"Audience: {preview.AudienceScope}");
+        builder.AppendLine($"Reason: {preview.Window.Reason}");
+        builder.AppendLine();
+        builder.AppendLine($"Internal reply: {(preview.HasActiveInternalMessage ? "present" : "missing")} ({preview.ActiveInternalLength} chars)");
+        builder.AppendLine($"External reply: {(preview.HasActiveExternalMessage ? "present" : "missing")} ({preview.ActiveExternalLength} chars)");
+        builder.AppendLine();
+        builder.AppendLine("Message bodies are not shown in this confirmation or diagnostics.");
+        builder.AppendLine("Choose Yes to update /me/mailboxSettings in Microsoft Graph.");
+        return builder.ToString();
+    }
+
+    private static string BuildCurrentSettingsText(CurrentMailboxSettingsSummary summary)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine($"Mailbox: {summary.MailboxUser}");
+        builder.AppendLine($"Status: {summary.Status}");
+        builder.AppendLine($"External audience: {summary.ExternalAudience}");
+        builder.AppendLine($"Scheduled start: {summary.ScheduledStart}");
+        builder.AppendLine($"Scheduled end: {summary.ScheduledEnd}");
+        builder.AppendLine($"Internal reply: {(summary.HasInternalReply ? "present" : "missing")} ({summary.InternalReplyLength} chars)");
+        builder.AppendLine($"External reply: {(summary.HasExternalReply ? "present" : "missing")} ({summary.ExternalReplyLength} chars)");
+        return builder.ToString();
+    }
+
+    private void ShowApplyResult(string message)
+    {
+        ApplyResultText = message;
+        IsApplyResultVisible = true;
+    }
+
     private void MarkGeneratedTemplateStale(string status)
     {
         if (_generatedTemplate is null)
@@ -582,6 +700,14 @@ public sealed class MainViewModel : ViewModelBase
         {
             RecentActivity.RemoveAt(RecentActivity.Count - 1);
         }
+
+        _state.Sync.RecentActivity.Clear();
+        foreach (var recentActivity in RecentActivity)
+        {
+            _state.Sync.RecentActivity.Add(recentActivity);
+        }
+
+        QueueSaveSettings();
     }
 
     private Task ToggleThemeAsync()

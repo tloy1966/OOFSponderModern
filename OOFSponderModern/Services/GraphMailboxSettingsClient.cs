@@ -21,6 +21,22 @@ public sealed class GraphMailboxSettingsClient : IMailboxSettingsClient
     private IPublicClientApplication? _publicClientApplication;
     private MsalCacheHelper? _cacheHelper;
 
+    public async Task<CurrentMailboxSettingsSummary> LoadCurrentSettingsAsync(CancellationToken cancellationToken = default)
+    {
+        var result = await AcquireTokenAsync(cancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Get, MailboxSettingsUri);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", result.AccessToken);
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException($"Graph GET failed: {(int)response.StatusCode} {response.ReasonPhrase}. {responseBody}");
+        }
+
+        return ParseCurrentSettings(responseBody, result.Account.Username);
+    }
+
     public async Task<string> PreviewApplyAsync(MailboxSettingsPreview preview, CancellationToken cancellationToken = default)
     {
         var result = await AcquireTokenAsync(cancellationToken);
@@ -148,4 +164,47 @@ public sealed class GraphMailboxSettingsClient : IMailboxSettingsClient
         AudienceScope.AllExternal => "all",
         _ => "contactsOnly"
     };
+
+    private static CurrentMailboxSettingsSummary ParseCurrentSettings(string responseBody, string mailboxUser)
+    {
+        using var document = JsonDocument.Parse(responseBody);
+        var root = document.RootElement;
+        if (!root.TryGetProperty("automaticRepliesSetting", out var setting))
+        {
+            throw new InvalidOperationException("Graph response did not include automaticRepliesSetting.");
+        }
+
+        var internalReply = ReadString(setting, "internalReplyMessage");
+        var externalReply = ReadString(setting, "externalReplyMessage");
+
+        return new CurrentMailboxSettingsSummary(
+            mailboxUser,
+            ReadString(setting, "status", "unknown"),
+            ReadString(setting, "externalAudience", "unknown"),
+            ReadGraphDateTime(setting, "scheduledStartDateTime"),
+            ReadGraphDateTime(setting, "scheduledEndDateTime"),
+            !string.IsNullOrWhiteSpace(internalReply),
+            !string.IsNullOrWhiteSpace(externalReply),
+            internalReply.Length,
+            externalReply.Length);
+    }
+
+    private static string ReadString(JsonElement element, string propertyName, string fallback = "")
+    {
+        return element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String
+            ? property.GetString() ?? fallback
+            : fallback;
+    }
+
+    private static string ReadGraphDateTime(JsonElement setting, string propertyName)
+    {
+        if (!setting.TryGetProperty(propertyName, out var property) || property.ValueKind != JsonValueKind.Object)
+        {
+            return "not scheduled";
+        }
+
+        var dateTime = ReadString(property, "dateTime");
+        var timeZone = ReadString(property, "timeZone", "local time");
+        return string.IsNullOrWhiteSpace(dateTime) ? "not scheduled" : $"{dateTime} {timeZone}";
+    }
 }

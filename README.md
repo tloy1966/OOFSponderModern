@@ -13,6 +13,8 @@ This repository is an AI-assisted modern rewrite focused on:
 - A modern WPF user experience.
 - GitHub Releases instead of ClickOnce deployment.
 - Microsoft Graph based Microsoft 365 automatic reply updates.
+- Review-before-apply confirmation and current Microsoft 365 automatic reply readback.
+- Apply result banner and first-run checklist for safer setup.
 - Light/dark mode and selectable color templates.
 - Local message suggestions for drafting OOF replies from the current schedule context.
 
@@ -65,7 +67,7 @@ OOFSponderModern saves user configuration locally at:
 %APPDATA%\OOFSponderModern\usersettings.json
 ```
 
-Saved configuration includes working hours, off-work days, message profiles, audience scope, selected apply profile, theme mode, color template, and linked time adjustment preference.
+Saved configuration includes working hours, off-work days, message profiles, audience scope, selected apply profile, theme mode, color template, linked time adjustment preference, first-run checklist state, and window size.
 
 ## Microsoft 365 permissions
 
@@ -74,7 +76,7 @@ OOFSponderModern uses Microsoft authentication and Microsoft Graph with these de
 - `user.read`
 - `MailboxSettings.ReadWrite`
 
-Clicking `Apply to M365` updates your mailbox automatic replies. The app shows a confirmation prompt before sending the Graph update. Message bodies are not written to diagnostics.
+Clicking `Apply to M365` updates your mailbox automatic replies. The app shows a review prompt before sending the Graph update, then displays an apply result banner. Message bodies are not written to diagnostics.
 
 ## Usage
 
@@ -85,6 +87,8 @@ Use `Link start/end time` when you want changing either workday start or end to 
 Use the `Messages` tab to edit the Primary and Extended internal/external reply profiles.
 
 Use `Profile to apply` in the `Schedule` tab to choose whether `Apply to M365` sends the Primary or Extended profile to Microsoft 365.
+
+Use `Load current M365 settings` in the `Sync / Diagnostics` tab to read your current mailbox automatic reply state before applying changes. This signs in with the same Graph permissions and does not modify mailbox settings.
 
 Use `Message Suggestions` to generate local OOF reply drafts and copy them into a selected profile. This does not send anything to Microsoft 365.
 

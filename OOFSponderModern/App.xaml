@@ -17,6 +17,7 @@
         <SolidColorBrush x:Key="QuickTimeButtonTextBrush" Color="#1E3A8A" />
         <SolidColorBrush x:Key="DisabledBrush" Color="#E5E7EB" />
         <SolidColorBrush x:Key="DisabledTextBrush" Color="#6B7280" />
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
 
         <Style x:Key="CardStyle" TargetType="Border">
             <Setter Property="Background" Value="{DynamicResource PanelBrush}" />
