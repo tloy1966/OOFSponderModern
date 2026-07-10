@@ -44,7 +44,7 @@ public sealed class InMemorySettingsService : ISettingsService
             {
                 DayOfWeek = day,
                 StartTime = new TimeSpan(9, 0, 0),
-                EndTime = new TimeSpan(17, 0, 0),
+                EndTime = new TimeSpan(18, 0, 0),
                 IsOffWork = day is DayOfWeek.Saturday or DayOfWeek.Sunday
             });
         }

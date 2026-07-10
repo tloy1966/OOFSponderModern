@@ -27,7 +27,7 @@ internal sealed class SchedulerServiceTests
         var now = new DateTimeOffset(2026, 7, 10, 10, 0, 0, TimeSpan.FromHours(8));
         var window = _scheduler.CalculateNextWindow(CreateDefaultSchedule(), now);
 
-        AssertEqual(new DateTimeOffset(2026, 7, 10, 17, 0, 0, TimeSpan.FromHours(8)), window.Start, nameof(window.Start));
+        AssertEqual(new DateTimeOffset(2026, 7, 10, 18, 0, 0, TimeSpan.FromHours(8)), window.Start, nameof(window.Start));
         AssertEqual(new DateTimeOffset(2026, 7, 13, 9, 0, 0, TimeSpan.FromHours(8)), window.End, nameof(window.End));
     }
 
@@ -55,14 +55,14 @@ internal sealed class SchedulerServiceTests
         {
             DayOfWeek = DayOfWeek.Monday,
             StartTime = new TimeSpan(9, 0, 0),
-            EndTime = new TimeSpan(17, 0, 0)
+            EndTime = new TimeSpan(18, 0, 0)
         };
         var viewModel = new OOFSponderModern.ViewModels.ScheduleDayViewModel(model, () => { }, () => true);
 
         viewModel.MoveEndLaterCommand.Execute(null);
 
         AssertEqual("09:30", viewModel.StartTimeText, nameof(viewModel.StartTimeText));
-        AssertEqual("17:30", viewModel.EndTimeText, nameof(viewModel.EndTimeText));
+        AssertEqual("18:30", viewModel.EndTimeText, nameof(viewModel.EndTimeText));
     }
 
     private static List<ScheduleDay> CreateDefaultSchedule(bool allOffWork = false)
@@ -72,7 +72,7 @@ internal sealed class SchedulerServiceTests
             {
                 DayOfWeek = day,
                 StartTime = new TimeSpan(9, 0, 0),
-                EndTime = new TimeSpan(17, 0, 0),
+                EndTime = new TimeSpan(18, 0, 0),
                 IsOffWork = allOffWork || day is DayOfWeek.Saturday or DayOfWeek.Sunday
             })
             .ToList();
