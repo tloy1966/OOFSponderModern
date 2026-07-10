@@ -64,7 +64,7 @@ public sealed class MainViewModel : ViewModelBase
         _extendedExternalMessage = _state.Messages.ExtendedExternalMessage;
         _syncStatus = _state.Sync.SyncStatus;
         _authState = _state.Sync.AuthState;
-        _templateStatus = "Local preview generator ready. Copilot integration is a future provider.";
+        _templateStatus = "Local message suggestion generator ready.";
 
         PreviewCommand = new RelayCommand(() =>
         {
@@ -250,7 +250,7 @@ public sealed class MainViewModel : ViewModelBase
             }
 
             OnPropertyChanged(nameof(TemplateTargetText));
-            MarkGeneratedTemplateStale("Target profile changed; regenerate the template preview before applying.");
+            MarkGeneratedTemplateStale("Target profile changed; regenerate the suggestion before applying.");
         }
     }
 
@@ -363,7 +363,7 @@ public sealed class MainViewModel : ViewModelBase
             SelectedTemplateTarget,
             DateTimeOffset.Now);
 
-        TemplateStatus = "Generating local AI-style template preview...";
+        TemplateStatus = "Generating local message suggestion...";
         _generatedTemplate = null;
         GeneratedInternalTemplate = string.Empty;
         GeneratedExternalTemplate = string.Empty;
@@ -377,9 +377,9 @@ public sealed class MainViewModel : ViewModelBase
             GeneratedInternalTemplate = result.InternalTemplate;
             GeneratedExternalTemplate = result.ExternalTemplate;
             TemplateStatus = result.IsLocalPreview
-                ? $"{result.ProviderName}: local preview generated. No external AI service was called."
-                : $"{result.ProviderName}: template generated.";
-            AddActivity($"Generated AI template preview for {SelectedTemplateTarget} profile. Message bodies omitted.");
+                ? $"{result.ProviderName}: local suggestion generated. No external service was called."
+                : $"{result.ProviderName}: suggestion generated.";
+            AddActivity($"Generated local message suggestion for {SelectedTemplateTarget} profile. Message bodies omitted.");
         }
         catch (Exception ex)
         {
@@ -412,7 +412,7 @@ public sealed class MainViewModel : ViewModelBase
         }
 
         PreviewText = BuildPreviewText(BuildPreview());
-        AddActivity($"Applied generated AI template to {SelectedTemplateTarget} profile. Message bodies omitted.");
+        AddActivity($"Applied generated message suggestion to {SelectedTemplateTarget} profile. Message bodies omitted.");
         return Task.CompletedTask;
     }
 

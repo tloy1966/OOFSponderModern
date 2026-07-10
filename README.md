@@ -14,9 +14,9 @@ This repository is an AI-assisted modern rewrite focused on:
 - GitHub Releases instead of ClickOnce deployment.
 - Microsoft Graph based Microsoft 365 automatic reply updates.
 - Light/dark mode and selectable color templates.
-- An `AI Template` feature for generating local OOF message suggestions.
+- Local message suggestions for drafting OOF replies from the current schedule context.
 
-The AI template feature currently generates local suggestions only; it does not call an external AI service.
+Message suggestions are generated locally with built-in rules; the app does not call external text-generation services.
 
 ## Install
 
@@ -76,7 +76,7 @@ Use the `Messages` tab to edit the Primary and Extended internal/external reply 
 
 Use `Profile to apply` in the `Schedule` tab to choose whether `Apply to M365` sends the Primary or Extended profile to Microsoft 365.
 
-Use `AI Template` to generate local message suggestions and copy them into a selected profile. This does not send anything to Microsoft 365.
+Use `Message Suggestions` to generate local OOF reply drafts and copy them into a selected profile. This does not send anything to Microsoft 365.
 
 ## Audience Scope
 

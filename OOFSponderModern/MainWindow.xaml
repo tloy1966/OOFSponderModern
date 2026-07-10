@@ -233,7 +233,7 @@
                     </Grid>
                 </TabItem>
 
-                <TabItem Header="AI Template">
+                <TabItem Header="Message Suggestions">
                     <Grid Margin="0,16,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="280" />
@@ -242,11 +242,11 @@
                         </Grid.ColumnDefinitions>
                         <Border Style="{StaticResource CardStyle}" Margin="0,0,18,0">
                             <StackPanel>
-                                <TextBlock Text="Template controls" Style="{StaticResource SectionTitleStyle}" />
+                                <TextBlock Text="Suggestion controls" Style="{StaticResource SectionTitleStyle}" />
                                 <TextBlock Text="Target profile" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" />
                                 <ComboBox ItemsSource="{Binding TemplateTargets}" SelectedItem="{Binding SelectedTemplateTarget}" ToolTip="Choose which profile the generated suggestion should target." />
-                                <Button Content="Generate template" Command="{Binding GenerateTemplateCommand}" Margin="0,8,0,0" ToolTip="Generate local OOF message suggestions from the current schedule context." />
-                                <Button Content="Apply generated template" Command="{Binding ApplyGeneratedTemplateCommand}" Background="{DynamicResource SuccessBrush}" Margin="0,8,0,0" ToolTip="Copy the generated suggestion into the selected profile editor. This does not send to Microsoft 365." />
+                                <Button Content="Generate suggestion" Command="{Binding GenerateTemplateCommand}" Margin="0,8,0,0" ToolTip="Generate local OOF message suggestions from the current schedule context." />
+                                <Button Content="Apply suggestion" Command="{Binding ApplyGeneratedTemplateCommand}" Background="{DynamicResource SuccessBrush}" Margin="0,8,0,0" ToolTip="Copy the generated suggestion into the selected profile editor. This does not send to Microsoft 365." />
                                 <Border Background="{DynamicResource AccentSoftBrush}" CornerRadius="8" Padding="14" Margin="0,16,0,0">
                                     <TextBlock Text="{Binding TemplateStatus}" TextWrapping="Wrap" Foreground="{DynamicResource AccentTextBrush}" />
                                 </Border>
