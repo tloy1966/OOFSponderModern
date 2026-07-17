@@ -4,6 +4,7 @@ public sealed class AppState
 {
     public int SchemaVersion { get; set; } = 1;
     public IList<ScheduleDay> WeeklySchedule { get; set; } = new List<ScheduleDay>();
+    public LongLeaveSettings LongLeave { get; set; } = new();
     public IList<MessageTemplate> MessageTemplates { get; set; } = new List<MessageTemplate>();
     public MessageProfile Messages { get; set; } = new();
     public SyncState Sync { get; set; } = new();

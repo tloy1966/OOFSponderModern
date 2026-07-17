@@ -22,7 +22,8 @@ public sealed class InMemorySettingsService : ISettingsService
     {
         var state = new AppState
         {
-            SchemaVersion = 2,
+            SchemaVersion = 3,
+            LongLeave = CreateDefaultLongLeaveSettings(),
             Messages = new MessageProfile
             {
                 PrimaryInternalMessage = "I am outside normal working hours and will respond when I return.",
@@ -61,6 +62,26 @@ public sealed class InMemorySettingsService : ISettingsService
         return state;
     }
 
+    internal static LongLeaveSettings CreateDefaultLongLeaveSettings()
+    {
+        var now = DateTimeOffset.Now;
+        var roundedMinutes = now.Minute < 30 ? 30 : 0;
+        var roundedHour = now.Minute < 30 ? now.Hour : now.Hour + 1;
+        var startLocal = new DateTime(now.Year, now.Month, now.Day, 0, 0, 0, DateTimeKind.Unspecified)
+            .AddHours(roundedHour)
+            .AddMinutes(roundedMinutes);
+        var endLocal = startLocal.AddDays(7);
+        var timeZone = TimeZoneInfo.Local;
+        var start = new DateTimeOffset(startLocal, timeZone.GetUtcOffset(startLocal));
+        var end = new DateTimeOffset(endLocal, timeZone.GetUtcOffset(endLocal));
+        return new LongLeaveSettings
+        {
+            Start = start,
+            End = end,
+            Label = "Long leave"
+        };
+    }
+
     internal static IReadOnlyList<MessageTemplate> CreateDefaultMessageTemplates() =>
     [
         new MessageTemplate
@@ -86,6 +107,12 @@ public sealed class InMemorySettingsService : ISettingsService
             Name = "Business Travel",
             InternalTemplate = "Hi, I am traveling for business from {StartDate} to {ReturnDate}. Responses may be delayed during this {Duration} period.",
             ExternalTemplate = "Thank you for your message. I am traveling for business and may have limited availability until {ReturnDate}."
+        },
+        new MessageTemplate
+        {
+            Name = "Long Leave",
+            InternalTemplate = "Hi, I am on extended leave from {StartDate} until {ReturnDate}. Please contact the team or my backup for urgent matters.",
+            ExternalTemplate = "Thank you for your message. I am on extended leave until {ReturnDate} and will respond after I return."
         }
     ];
 }

@@ -53,6 +53,16 @@ public sealed class SchedulerService : ISchedulerService
             "Today is marked off work; keep OOF active through the next working start.");
     }
 
+    public OofWindow CalculateLongLeaveWindow(DateTimeOffset start, DateTimeOffset end)
+    {
+        if (end <= start)
+        {
+            throw new ArgumentException("Long leave return must be later than its start.", nameof(end));
+        }
+
+        return new OofWindow(start, end, "Explicit long-leave interval.");
+    }
+
     public bool IsWithinWorkingHours(IReadOnlyList<ScheduleDay> weeklySchedule, DateTimeOffset now)
     {
         var today = GetDay(weeklySchedule, now.DayOfWeek);

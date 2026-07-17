@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.Reflection;
 using System.Text;
 using System.Windows;
@@ -17,6 +18,7 @@ public sealed class MainViewModel : ViewModelBase
     private readonly IMessageTemplateRenderer _messageTemplateRenderer;
     private readonly IReleaseUpdateService _releaseUpdateService;
     private readonly ISettingsService _settingsService;
+    private readonly IStartupService _startupService;
     private readonly AppState _state;
     private CancellationTokenSource? _saveSettingsDebounce;
     private OofWindow _currentWindow;
@@ -40,7 +42,16 @@ public sealed class MainViewModel : ViewModelBase
     private string _applyResultText = string.Empty;
     private string _currentM365SettingsText = "Current Microsoft 365 automatic reply settings have not been loaded yet.";
     private bool _isDarkMode;
+    private bool _startWithWindows;
     private bool _isLinkedTimeAdjustmentEnabled = true;
+    private ScheduleSource _selectedScheduleSource;
+    private DateTime? _longLeaveStartDate;
+    private DateTime? _longLeaveEndDate;
+    private string _longLeaveStartTimeText = string.Empty;
+    private string _longLeaveEndTimeText = string.Empty;
+    private string _longLeaveLabel = string.Empty;
+    private string _longLeaveStatus = string.Empty;
+    private bool _isActiveWindowValid = true;
     private bool _isApplyResultVisible;
     private bool _isOnboardingVisible;
     private ThemePalette _selectedThemePalette = ThemePalette.ProductivityBlue;
@@ -60,7 +71,8 @@ public sealed class MainViewModel : ViewModelBase
         IMailboxSettingsClient mailboxClient,
         IOofTemplateGenerator templateGenerator,
         IMessageTemplateRenderer messageTemplateRenderer,
-        IReleaseUpdateService releaseUpdateService)
+        IReleaseUpdateService releaseUpdateService,
+        IStartupService startupService)
     {
         _settingsService = settingsService;
         _scheduler = scheduler;
@@ -68,6 +80,7 @@ public sealed class MainViewModel : ViewModelBase
         _templateGenerator = templateGenerator;
         _messageTemplateRenderer = messageTemplateRenderer;
         _releaseUpdateService = releaseUpdateService;
+        _startupService = startupService;
         _state = settingsService.LoadAsync().GetAwaiter().GetResult();
         _currentWindow = new OofWindow(DateTimeOffset.Now, DateTimeOffset.Now, "Not calculated yet.");
 
@@ -81,14 +94,23 @@ public sealed class MainViewModel : ViewModelBase
         AudienceScopeDisplayNames = Enum.GetValues<AudienceScope>().Select(ToAudienceScopeDisplayName).ToArray();
         TemplateTargets = Enum.GetValues<TemplateTargetProfile>();
         ThemePalettes = Enum.GetValues<ThemePalette>();
+        ScheduleSourceDisplayNames = ["Weekly schedule", "Long leave"];
 
         _selectedAudienceScope = _state.Messages.AudienceScope;
-    _selectedTemplateTarget = _state.Preferences.SelectedTemplateTarget;
-    _selectedApplyProfile = _state.Preferences.SelectedApplyProfile;
-    _isDarkMode = _state.Preferences.IsDarkMode;
-    _isLinkedTimeAdjustmentEnabled = _state.Preferences.IsLinkedTimeAdjustmentEnabled;
-    _isOnboardingVisible = !_state.Preferences.IsOnboardingDismissed;
-    _selectedThemePalette = _state.Preferences.ThemePalette;
+        _selectedTemplateTarget = _state.Preferences.SelectedTemplateTarget;
+        _selectedApplyProfile = _state.Preferences.SelectedApplyProfile;
+        _selectedScheduleSource = _state.Preferences.SelectedScheduleSource;
+        _isDarkMode = _state.Preferences.IsDarkMode;
+        _startWithWindows = startupService.IsEnabled;
+        _state.Preferences.StartWithWindows = _startWithWindows;
+        _isLinkedTimeAdjustmentEnabled = _state.Preferences.IsLinkedTimeAdjustmentEnabled;
+        _isOnboardingVisible = !_state.Preferences.IsOnboardingDismissed;
+        _selectedThemePalette = _state.Preferences.ThemePalette;
+        _longLeaveStartDate = _state.LongLeave.Start.LocalDateTime.Date;
+        _longLeaveEndDate = _state.LongLeave.End.LocalDateTime.Date;
+        _longLeaveStartTimeText = _state.LongLeave.Start.LocalDateTime.ToString("HH:mm", CultureInfo.InvariantCulture);
+        _longLeaveEndTimeText = _state.LongLeave.End.LocalDateTime.ToString("HH:mm", CultureInfo.InvariantCulture);
+        _longLeaveLabel = _state.LongLeave.Label;
         _primaryInternalMessage = _state.Messages.PrimaryInternalMessage;
         _primaryExternalMessage = _state.Messages.PrimaryExternalMessage;
         _extendedInternalMessage = _state.Messages.ExtendedInternalMessage;
@@ -105,12 +127,12 @@ public sealed class MainViewModel : ViewModelBase
             PreviewText = BuildPreviewText(BuildPreview());
             AddActivity("Generated local preview payload. Message bodies omitted from diagnostics.");
             return Task.CompletedTask;
-        });
-        ApplyToM365Command = new RelayCommand(ApplyToM365Async);
+        }, () => IsActiveWindowValid);
+        ApplyToM365Command = new RelayCommand(ApplyToM365Async, () => IsActiveWindowValid);
         LoadCurrentM365SettingsCommand = new RelayCommand(LoadCurrentM365SettingsAsync);
         DismissOnboardingCommand = new RelayCommand(DismissOnboardingAsync);
         ClearApplyResultCommand = new RelayCommand(ClearApplyResultAsync);
-        GenerateTemplateCommand = new RelayCommand(GenerateTemplateAsync);
+        GenerateTemplateCommand = new RelayCommand(GenerateTemplateAsync, () => IsActiveWindowValid);
         ApplyGeneratedTemplateCommand = new RelayCommand(
             ApplyGeneratedTemplateAsync,
             () => _generatedTemplate is not null);
@@ -122,7 +144,7 @@ public sealed class MainViewModel : ViewModelBase
         NewMessageTemplateCommand = new RelayCommand(NewMessageTemplateAsync);
         SaveMessageTemplateCommand = new RelayCommand(SaveMessageTemplateAsync, () => !string.IsNullOrWhiteSpace(TemplateName));
         DeleteMessageTemplateCommand = new RelayCommand(DeleteMessageTemplateAsync, () => SelectedMessageTemplate is not null);
-        PreviewMessageTemplateCommand = new RelayCommand(PreviewMessageTemplateAsync, () => SelectedMessageTemplate is not null || !string.IsNullOrWhiteSpace(TemplateName));
+        PreviewMessageTemplateCommand = new RelayCommand(PreviewMessageTemplateAsync, () => IsActiveWindowValid && (SelectedMessageTemplate is not null || !string.IsNullOrWhiteSpace(TemplateName)));
         CheckForUpdatesCommand = new RelayCommand(() => CheckForUpdatesAsync(force: true));
         OpenReleasePageCommand = new RelayCommand(OpenReleasePageAsync, () => IsUpdateAvailable);
         SkipReleaseCommand = new RelayCommand(SkipReleaseAsync, () => IsUpdateAvailable);
@@ -145,6 +167,7 @@ public sealed class MainViewModel : ViewModelBase
     public IReadOnlyList<string> AudienceScopeDisplayNames { get; }
     public IReadOnlyList<TemplateTargetProfile> TemplateTargets { get; }
     public IReadOnlyList<ThemePalette> ThemePalettes { get; }
+    public IReadOnlyList<string> ScheduleSourceDisplayNames { get; }
     public RelayCommand PreviewCommand { get; }
     public RelayCommand ApplyToM365Command { get; }
     public RelayCommand LoadCurrentM365SettingsCommand { get; }
@@ -195,6 +218,128 @@ public sealed class MainViewModel : ViewModelBase
     public string LinkedTimeAdjustmentText => IsLinkedTimeAdjustmentEnabled
         ? "Linked time adjustment is on: changing start time shifts end time."
         : "Linked time adjustment is off: start and end time change independently.";
+
+    public string SelectedScheduleSourceDisplayName
+    {
+        get => SelectedScheduleSource == ScheduleSource.LongLeave ? "Long leave" : "Weekly schedule";
+        set => SelectedScheduleSource = value == "Long leave" ? ScheduleSource.LongLeave : ScheduleSource.WeeklySchedule;
+    }
+
+    public ScheduleSource SelectedScheduleSource
+    {
+        get => _selectedScheduleSource;
+        set
+        {
+            if (!SetProperty(ref _selectedScheduleSource, value))
+            {
+                return;
+            }
+
+            _state.Preferences.SelectedScheduleSource = value;
+            if (value == ScheduleSource.LongLeave && !_state.Preferences.HasInitializedLongLeaveProfile)
+            {
+                _state.Preferences.HasInitializedLongLeaveProfile = true;
+                SelectedTemplateTarget = TemplateTargetProfile.Extended;
+                SelectedApplyProfile = TemplateTargetProfile.Extended;
+            }
+
+            OnPropertyChanged(nameof(SelectedScheduleSourceDisplayName));
+            OnPropertyChanged(nameof(IsLongLeaveMode));
+            OnPropertyChanged(nameof(IsWeeklyScheduleMode));
+            RecalculateWindow();
+            AddActivity(value == ScheduleSource.LongLeave
+                ? "Selected explicit long-leave schedule mode."
+                : "Selected weekly schedule mode.");
+        }
+    }
+
+    public bool IsLongLeaveMode => SelectedScheduleSource == ScheduleSource.LongLeave;
+    public bool IsWeeklyScheduleMode => SelectedScheduleSource == ScheduleSource.WeeklySchedule;
+
+    public DateTime? LongLeaveStartDate
+    {
+        get => _longLeaveStartDate;
+        set
+        {
+            if (SetProperty(ref _longLeaveStartDate, value))
+            {
+                UpdateLongLeaveWindow();
+            }
+        }
+    }
+
+    public DateTime? LongLeaveEndDate
+    {
+        get => _longLeaveEndDate;
+        set
+        {
+            if (SetProperty(ref _longLeaveEndDate, value))
+            {
+                UpdateLongLeaveWindow();
+            }
+        }
+    }
+
+    public string LongLeaveStartTimeText
+    {
+        get => _longLeaveStartTimeText;
+        set
+        {
+            if (SetProperty(ref _longLeaveStartTimeText, value))
+            {
+                UpdateLongLeaveWindow();
+            }
+        }
+    }
+
+    public string LongLeaveEndTimeText
+    {
+        get => _longLeaveEndTimeText;
+        set
+        {
+            if (SetProperty(ref _longLeaveEndTimeText, value))
+            {
+                UpdateLongLeaveWindow();
+            }
+        }
+    }
+
+    public string LongLeaveLabel
+    {
+        get => _longLeaveLabel;
+        set
+        {
+            if (SetProperty(ref _longLeaveLabel, value))
+            {
+                _state.LongLeave.Label = value;
+                PreviewText = IsActiveWindowValid ? BuildPreviewText(BuildPreview()) : PreviewText;
+                QueueSaveSettings();
+            }
+        }
+    }
+
+    public string LongLeaveStatus
+    {
+        get => _longLeaveStatus;
+        private set => SetProperty(ref _longLeaveStatus, value);
+    }
+
+    public bool IsActiveWindowValid
+    {
+        get => _isActiveWindowValid;
+        private set
+        {
+            if (!SetProperty(ref _isActiveWindowValid, value))
+            {
+                return;
+            }
+
+            PreviewCommand.RaiseCanExecuteChanged();
+            ApplyToM365Command.RaiseCanExecuteChanged();
+            GenerateTemplateCommand.RaiseCanExecuteChanged();
+            PreviewMessageTemplateCommand.RaiseCanExecuteChanged();
+        }
+    }
 
     public string CurrentOofMode
     {
@@ -278,6 +423,34 @@ public sealed class MainViewModel : ViewModelBase
             AddActivity(value
                 ? "Linked time adjustment enabled. Start time changes will shift end time."
                 : "Linked time adjustment disabled. Start and end time can be adjusted independently.");
+        }
+    }
+
+    public bool StartWithWindows
+    {
+        get => _startWithWindows;
+        set
+        {
+            if (_startWithWindows == value)
+            {
+                return;
+            }
+
+            try
+            {
+                _startupService.SetEnabled(value);
+                SetProperty(ref _startWithWindows, value);
+                _state.Preferences.StartWithWindows = value;
+                QueueSaveSettings();
+                AddActivity(value
+                    ? "Enabled automatic startup when you sign in to Windows."
+                    : "Disabled automatic startup when you sign in to Windows.");
+            }
+            catch (Exception ex)
+            {
+                OnPropertyChanged();
+                AddActivity($"Could not update Windows startup: {ex.Message}");
+            }
         }
     }
 
@@ -581,15 +754,122 @@ public sealed class MainViewModel : ViewModelBase
     private void RecalculateWindow()
     {
         var now = DateTimeOffset.Now;
-        _currentWindow = _scheduler.CalculateNextWindow(_state.WeeklySchedule.ToList(), now);
-        var inWorkingHours = _scheduler.IsWithinWorkingHours(_state.WeeklySchedule.ToList(), now);
-        CurrentOofMode = inWorkingHours ? "Working hours — scheduled OOF preview" : "OOF preview window active";
+        if (IsLongLeaveMode)
+        {
+            if (!TryGetLongLeaveWindow(out var longLeaveWindow, out var validationMessage))
+            {
+                IsActiveWindowValid = false;
+                CurrentOofMode = "Long leave — needs attention";
+                LongLeaveStatus = validationMessage;
+                ScheduleStatus = "Correct the long-leave dates before previewing or applying.";
+                PreviewText = $"LONG LEAVE DRAFT — {validationMessage}\nNo Microsoft 365 update can be applied.";
+                MarkGeneratedTemplateStale("Long-leave dates changed; correct them and regenerate the suggestion.");
+                return;
+            }
+
+            _currentWindow = longLeaveWindow;
+            IsActiveWindowValid = true;
+            CurrentOofMode = "Long leave — explicit OOF window";
+            LongLeaveStatus = BuildLongLeaveStatus(longLeaveWindow, now);
+        }
+        else
+        {
+            _currentWindow = _scheduler.CalculateNextWindow(_state.WeeklySchedule.ToList(), now);
+            IsActiveWindowValid = true;
+            var inWorkingHours = _scheduler.IsWithinWorkingHours(_state.WeeklySchedule.ToList(), now);
+            CurrentOofMode = inWorkingHours ? "Working hours — scheduled OOF preview" : "OOF preview window active";
+        }
+
         NextOofWindowText = $"{_currentWindow.Start:g} → {_currentWindow.End:g}";
         ScheduleStatus = $"Schedule recalculated at {DateTimeOffset.Now:t}";
         OnPropertyChanged(nameof(AudienceScopeText));
         PreviewText = BuildPreviewText(BuildPreview());
         QueueSaveSettings();
         MarkGeneratedTemplateStale("Schedule changed; regenerate the template preview before applying.");
+    }
+
+    private void UpdateLongLeaveWindow()
+    {
+        if (TryComposeLocalDateTime(LongLeaveStartDate, LongLeaveStartTimeText, out var start) &&
+            TryComposeLocalDateTime(LongLeaveEndDate, LongLeaveEndTimeText, out var end))
+        {
+            _state.LongLeave.Start = start;
+            _state.LongLeave.End = end;
+            QueueSaveSettings();
+        }
+
+        if (IsLongLeaveMode)
+        {
+            RecalculateWindow();
+        }
+    }
+
+    private bool TryGetLongLeaveWindow(out OofWindow window, out string validationMessage)
+    {
+        window = _currentWindow;
+        if (!TryComposeLocalDateTime(LongLeaveStartDate, LongLeaveStartTimeText, out var start))
+        {
+            validationMessage = "Enter a valid start date and time (for example, 09:00).";
+            return false;
+        }
+
+        if (!TryComposeLocalDateTime(LongLeaveEndDate, LongLeaveEndTimeText, out var end))
+        {
+            validationMessage = "Enter a valid return date and time (for example, 09:00).";
+            return false;
+        }
+
+        if (end <= start)
+        {
+            validationMessage = "Return must be later than the leave start.";
+            return false;
+        }
+
+        window = _scheduler.CalculateLongLeaveWindow(start, end);
+        validationMessage = string.Empty;
+        return true;
+    }
+
+    private static bool TryComposeLocalDateTime(DateTime? date, string timeText, out DateTimeOffset value)
+    {
+        value = default;
+        if (date is null ||
+            !TimeSpan.TryParse(timeText, CultureInfo.CurrentCulture, out var time) ||
+            time < TimeSpan.Zero ||
+            time >= TimeSpan.FromDays(1))
+        {
+            return false;
+        }
+
+        var localDateTime = DateTime.SpecifyKind(date.Value.Date.Add(time), DateTimeKind.Unspecified);
+        var timeZone = TimeZoneInfo.Local;
+        if (timeZone.IsInvalidTime(localDateTime))
+        {
+            localDateTime = localDateTime.AddHours(1);
+        }
+
+        value = new DateTimeOffset(localDateTime, timeZone.GetUtcOffset(localDateTime));
+        return true;
+    }
+
+    private static string BuildLongLeaveStatus(OofWindow window, DateTimeOffset now)
+    {
+        if (window.Start < now)
+        {
+            return "The start is in the past. Apply will ask to move it to the current time.";
+        }
+
+        if (window.Duration < TimeSpan.FromDays(3))
+        {
+            return $"Valid interval ({window.Duration.TotalHours:0.#} hours). Weekly schedule mode may be more appropriate for short absences.";
+        }
+
+        if (window.Duration > TimeSpan.FromDays(366))
+        {
+            return $"Valid interval ({window.Duration.TotalDays:0} days), but verify the dates because it exceeds one year.";
+        }
+
+        return $"Valid explicit interval: {window.Duration.TotalDays:0.#} days.";
     }
 
     private Task NewMessageTemplateAsync()
@@ -868,6 +1148,35 @@ public sealed class MainViewModel : ViewModelBase
 
     private async Task ApplyToM365Async()
     {
+        if (IsLongLeaveMode && _currentWindow.Start < DateTimeOffset.Now)
+        {
+            var adjustConfirmation = System.Windows.MessageBox.Show(
+                "The long-leave start is in the past. Move the start to the current time before applying?",
+                "Adjust long-leave start",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+            if (adjustConfirmation != MessageBoxResult.Yes)
+            {
+                AddActivity("Microsoft 365 apply canceled because the long-leave start was in the past.");
+                ShowApplyResult("Apply canceled. Update the long-leave start before applying.");
+                return;
+            }
+
+            var now = DateTimeOffset.Now;
+            if (_currentWindow.End <= now)
+            {
+                IsActiveWindowValid = false;
+                LongLeaveStatus = "The long-leave interval has ended. Choose a future return time.";
+                ShowApplyResult("Apply blocked because the long-leave interval has already ended.");
+                return;
+            }
+
+            _state.LongLeave.Start = now;
+            LongLeaveStartDate = now.LocalDateTime.Date;
+            LongLeaveStartTimeText = now.LocalDateTime.ToString("HH:mm", CultureInfo.InvariantCulture);
+            RecalculateWindow();
+        }
+
         var preview = BuildPreview();
         var confirmation = System.Windows.MessageBox.Show(
             BuildApplyReviewText(preview),
@@ -977,12 +1286,17 @@ public sealed class MainViewModel : ViewModelBase
             ExtendedExternalMessage.Length);
     }
 
-    private static string BuildPreviewText(MailboxSettingsPreview preview)
+    private string BuildPreviewText(MailboxSettingsPreview preview)
     {
         var builder = new StringBuilder();
         builder.AppendLine("MICROSOFT 365 APPLY MODE — Apply will PATCH Microsoft Graph.");
         builder.AppendLine("Target: PATCH /v1.0/me/mailboxSettings");
         builder.AppendLine("Payload property: automaticRepliesSetting");
+        builder.AppendLine($"Schedule source: {(IsLongLeaveMode ? "Long leave" : "Weekly schedule")}");
+        if (IsLongLeaveMode && !string.IsNullOrWhiteSpace(LongLeaveLabel))
+        {
+            builder.AppendLine($"Local label: {LongLeaveLabel.Trim()}");
+        }
         builder.AppendLine($"Active profile: {preview.ActiveProfile}");
         builder.AppendLine("Status: Scheduled");
         builder.AppendLine($"Start: {preview.Window.Start:yyyy-MM-dd HH:mm zzz}");
@@ -1001,11 +1315,16 @@ public sealed class MainViewModel : ViewModelBase
         return builder.ToString();
     }
 
-    private static string BuildApplyReviewText(MailboxSettingsPreview preview)
+    private string BuildApplyReviewText(MailboxSettingsPreview preview)
     {
         var builder = new StringBuilder();
         builder.AppendLine("Review before applying to Microsoft 365");
         builder.AppendLine();
+        builder.AppendLine($"Schedule source: {(IsLongLeaveMode ? "Long leave" : "Weekly schedule")}");
+        if (IsLongLeaveMode && !string.IsNullOrWhiteSpace(LongLeaveLabel))
+        {
+            builder.AppendLine($"Local label: {LongLeaveLabel.Trim()}");
+        }
         builder.AppendLine($"Profile: {preview.ActiveProfile}");
         builder.AppendLine($"Schedule: {preview.Window.Start:g} to {preview.Window.End:g}");
         builder.AppendLine($"Audience: {preview.AudienceScope}");

@@ -15,7 +15,8 @@ public partial class MainWindow : Window
             new GraphMailboxSettingsClient(),
             new LocalOofTemplateGenerator(),
             new MessageTemplateRenderer(),
-            new GitHubReleaseUpdateService());
+            new GitHubReleaseUpdateService(),
+            new WindowsStartupService());
         if (DataContext is MainViewModel viewModel)
         {
             viewModel.RestoreWindowPlacement(this);

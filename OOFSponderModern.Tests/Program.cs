@@ -8,14 +8,21 @@ tests.BeforeWorkingHoursStartsAtNow();
 tests.DuringWorkingHoursStartsAtWorkdayEnd();
 tests.OffWorkDayStartsAtNow();
 tests.AllOffWorkUsesOneWeekWindow();
+tests.LongLeaveUsesExplicitWindow();
+tests.LongLeaveRejectsInvalidWindow();
+tests.LongLeavePreservesDstOffsets();
 tests.LinkedEndAdjustmentShiftsStartTime();
 tests.NextWorkingStartUsesPostDstOffset();
 tests.DefaultSettingsUseNineToSixWeekdays();
 tests.DefaultSettingsIncludeNamedMessageTemplates();
+tests.DefaultSettingsIncludeValidLongLeaveDraft();
 tests.MessageTemplateVariablesResolveFromCurrentWindow();
 tests.MessageTemplateUnknownVariablesAreReported();
 tests.SemanticVersionsSortCorrectly();
 tests.SettingsCollectionsRoundTripThroughJson();
+tests.SchemaTwoSettingsMigrateWithoutChangingCustomTemplates();
+tests.LongLeaveViewModelWorkflowValidatesAndPreservesProfileChoice();
+tests.StartupPreferenceTracksWindowsStartupState();
 Console.WriteLine("OOFSponderModern regression tests passed.");
 
 internal sealed class SchedulerServiceTests
@@ -61,6 +68,45 @@ internal sealed class SchedulerServiceTests
 
         AssertEqual(now, window.Start, nameof(window.Start));
         AssertEqual(now.AddDays(7), window.End, nameof(window.End));
+    }
+
+    public void LongLeaveUsesExplicitWindow()
+    {
+        var start = new DateTimeOffset(2026, 8, 3, 9, 0, 0, TimeSpan.FromHours(8));
+        var end = new DateTimeOffset(2026, 8, 21, 9, 0, 0, TimeSpan.FromHours(8));
+
+        var window = _scheduler.CalculateLongLeaveWindow(start, end);
+
+        AssertEqual(start, window.Start, nameof(window.Start));
+        AssertEqual(end, window.End, nameof(window.End));
+        AssertEqual("Explicit long-leave interval.", window.Reason, nameof(window.Reason));
+    }
+
+    public void LongLeaveRejectsInvalidWindow()
+    {
+        var start = new DateTimeOffset(2026, 8, 3, 9, 0, 0, TimeSpan.FromHours(8));
+        var rejected = false;
+        try
+        {
+            _scheduler.CalculateLongLeaveWindow(start, start);
+        }
+        catch (ArgumentException)
+        {
+            rejected = true;
+        }
+
+        AssertEqual(true, rejected, "Invalid explicit interval rejected");
+    }
+
+    public void LongLeavePreservesDstOffsets()
+    {
+        var start = new DateTimeOffset(2026, 3, 6, 18, 0, 0, TimeSpan.FromHours(-8));
+        var end = new DateTimeOffset(2026, 3, 16, 9, 0, 0, TimeSpan.FromHours(-7));
+
+        var window = _scheduler.CalculateLongLeaveWindow(start, end);
+
+        AssertEqual(TimeSpan.FromHours(-8), window.Start.Offset, "Long leave start offset");
+        AssertEqual(TimeSpan.FromHours(-7), window.End.Offset, "Long leave end offset");
     }
 
     public void LinkedEndAdjustmentShiftsStartTime()
@@ -113,6 +159,18 @@ internal sealed class SchedulerServiceTests
         AssertEqual(true, names.Contains("Weekend"), "Weekend template");
         AssertEqual(true, names.Contains("Holiday"), "Holiday template");
         AssertEqual(true, names.Contains("Business Travel"), "Business Travel template");
+        AssertEqual(true, names.Contains("Long Leave"), "Long Leave template");
+    }
+
+    public void DefaultSettingsIncludeValidLongLeaveDraft()
+    {
+        var state = new InMemorySettingsService().LoadAsync().GetAwaiter().GetResult();
+
+        AssertEqual(3, state.SchemaVersion, "Default schema version");
+        AssertEqual(true, state.LongLeave.Start > DateTimeOffset.Now.AddMinutes(-1), "Default leave starts in the future");
+        AssertEqual(true, state.LongLeave.End > state.LongLeave.Start, "Default leave return follows start");
+        AssertEqual("Long leave", state.LongLeave.Label, "Default leave label");
+        AssertEqual(ScheduleSource.WeeklySchedule, state.Preferences.SelectedScheduleSource, "Default schedule source");
     }
 
     public void MessageTemplateVariablesResolveFromCurrentWindow()
@@ -162,7 +220,16 @@ internal sealed class SchedulerServiceTests
 
     public void SettingsCollectionsRoundTripThroughJson()
     {
-        var state = new AppState { SchemaVersion = 2 };
+        var state = new AppState
+        {
+            SchemaVersion = 3,
+            LongLeave = new LongLeaveSettings
+            {
+                Start = new DateTimeOffset(2026, 8, 3, 9, 0, 0, TimeSpan.FromHours(8)),
+                End = new DateTimeOffset(2026, 8, 21, 9, 0, 0, TimeSpan.FromHours(8)),
+                Label = "Sabbatical"
+            }
+        };
         state.WeeklySchedule.Add(new ScheduleDay
         {
             DayOfWeek = DayOfWeek.Wednesday,
@@ -182,6 +249,191 @@ internal sealed class SchedulerServiceTests
         AssertEqual(new TimeSpan(7, 30, 0), roundTripped.WeeklySchedule[0].StartTime, "Persisted custom start");
         AssertEqual(1, roundTripped.MessageTemplates.Count, "Persisted template count");
         AssertEqual("Custom template", roundTripped.MessageTemplates[0].Name, "Persisted template name");
+        AssertEqual("Sabbatical", roundTripped.LongLeave.Label, "Persisted long-leave label");
+        AssertEqual(state.LongLeave.End, roundTripped.LongLeave.End, "Persisted long-leave end");
+    }
+
+    public void SchemaTwoSettingsMigrateWithoutChangingCustomTemplates()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"OOFSponderModern.Tests-{Guid.NewGuid():N}");
+        var settingsPath = Path.Combine(directory, "usersettings.json");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var state = new AppState
+            {
+                SchemaVersion = 2,
+                LongLeave = null!,
+                Preferences = new UserPreferences
+                {
+                    AreDefaultMessageTemplatesInitialized = true,
+                    SelectedScheduleSource = ScheduleSource.WeeklySchedule
+                }
+            };
+            state.WeeklySchedule.Add(new ScheduleDay
+            {
+                DayOfWeek = DayOfWeek.Monday,
+                StartTime = new TimeSpan(8, 0, 0),
+                EndTime = new TimeSpan(17, 0, 0)
+            });
+            state.MessageTemplates.Add(new MessageTemplate { Name = "My custom template" });
+            var options = new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                Converters = { new JsonStringEnumConverter() }
+            };
+            File.WriteAllText(settingsPath, JsonSerializer.Serialize(state, options));
+
+            var service = new FileSettingsService(settingsPath);
+            var migrated = service.LoadAsync().GetAwaiter().GetResult();
+
+            AssertEqual(3, migrated.SchemaVersion, "Migrated schema version");
+            AssertEqual(true, migrated.LongLeave.Start != default, "Migration creates long-leave draft");
+            AssertEqual(true, migrated.LongLeave.End > migrated.LongLeave.Start, "Migrated leave interval valid");
+            AssertEqual(1, migrated.MessageTemplates.Count, "Migration preserves customized template count");
+            AssertEqual("My custom template", migrated.MessageTemplates[0].Name, "Migration preserves custom template");
+            AssertEqual(new TimeSpan(8, 0, 0), migrated.WeeklySchedule[0].StartTime, "Migration preserves schedule");
+
+            migrated.Preferences.SelectedScheduleSource = ScheduleSource.LongLeave;
+            service.SaveAsync(migrated).GetAwaiter().GetResult();
+            var reloaded = service.LoadAsync().GetAwaiter().GetResult();
+            AssertEqual(ScheduleSource.LongLeave, reloaded.Preferences.SelectedScheduleSource, "Schedule source persists");
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    public void LongLeaveViewModelWorkflowValidatesAndPreservesProfileChoice()
+    {
+        RunOnStaThread(() =>
+        {
+            _ = System.Windows.Application.Current ?? new System.Windows.Application();
+            var settings = new InMemorySettingsService();
+            var state = settings.LoadAsync().GetAwaiter().GetResult();
+            state.Preferences.SelectedTemplateTarget = TemplateTargetProfile.Primary;
+            state.Preferences.SelectedApplyProfile = TemplateTargetProfile.Primary;
+            state.Preferences.HasInitializedLongLeaveProfile = false;
+
+            var viewModel = new OOFSponderModern.ViewModels.MainViewModel(
+                settings,
+                _scheduler,
+                new StubMailboxSettingsClient(),
+                new LocalOofTemplateGenerator(),
+                new MessageTemplateRenderer(),
+                new StubReleaseUpdateService(),
+                new StubStartupService());
+
+            var start = DateTime.Today.AddDays(10);
+            viewModel.LongLeaveStartDate = start;
+            viewModel.LongLeaveStartTimeText = "09:00";
+            viewModel.LongLeaveEndDate = start.AddDays(14);
+            viewModel.LongLeaveEndTimeText = "09:00";
+            viewModel.LongLeaveLabel = "Sabbatical";
+            viewModel.SelectedScheduleSourceDisplayName = "Long leave";
+
+            AssertEqual(true, viewModel.IsLongLeaveMode, "Long-leave mode selected");
+            AssertEqual(true, viewModel.IsActiveWindowValid, "Explicit interval valid");
+            AssertEqual(TemplateTargetProfile.Extended, viewModel.SelectedTemplateTarget, "First switch defaults suggestion profile");
+            AssertEqual(TemplateTargetProfile.Extended, viewModel.SelectedApplyProfile, "First switch defaults apply profile");
+            AssertEqual(true, viewModel.PreviewText.Contains("Schedule source: Long leave"), "Preview identifies schedule source");
+            AssertEqual(true, viewModel.PreviewText.Contains("Local label: Sabbatical"), "Preview includes local label");
+
+            viewModel.GenerateTemplateCommand.Execute(null);
+            AssertEqual(true, !string.IsNullOrWhiteSpace(viewModel.GeneratedInternalTemplate), "Long-leave suggestion generated");
+            viewModel.LongLeaveEndDate = start.AddDays(15);
+            AssertEqual(string.Empty, viewModel.GeneratedInternalTemplate, "Date change invalidates suggestion");
+
+            viewModel.LongLeaveEndDate = viewModel.LongLeaveStartDate;
+            viewModel.LongLeaveEndTimeText = viewModel.LongLeaveStartTimeText;
+            AssertEqual(false, viewModel.IsActiveWindowValid, "Non-positive interval rejected");
+            AssertEqual(false, viewModel.ApplyToM365Command.CanExecute(null), "Invalid interval blocks apply");
+            AssertEqual(true, viewModel.LongLeaveStatus.Contains("later"), "Invalid interval explains correction");
+
+            viewModel.LongLeaveEndDate = start.AddDays(14);
+            viewModel.LongLeaveEndTimeText = "09:00";
+            AssertEqual(true, viewModel.IsActiveWindowValid, "Corrected interval becomes valid");
+            viewModel.LongLeaveStartTimeText = "not-a-time";
+            AssertEqual(false, viewModel.IsActiveWindowValid, "Invalid start time rejected");
+            AssertEqual(false, viewModel.PreviewCommand.CanExecute(null), "Invalid time blocks preview");
+            viewModel.LongLeaveStartTimeText = "09:00";
+
+            viewModel.LongLeaveEndTimeText = "not-a-time";
+            AssertEqual(false, viewModel.IsActiveWindowValid, "Invalid return time rejected");
+            AssertEqual(true, viewModel.LongLeaveStatus.Contains("return date and time"), "Invalid return time explained");
+            viewModel.LongLeaveEndTimeText = "09:00";
+            viewModel.LongLeaveStartDate = null;
+            AssertEqual(false, viewModel.IsActiveWindowValid, "Missing start date rejected");
+            viewModel.LongLeaveStartDate = start;
+
+            viewModel.LongLeaveEndDate = start.AddDays(1);
+            AssertEqual(true, viewModel.LongLeaveStatus.Contains("Weekly schedule mode"), "Short leave warning shown");
+            viewModel.LongLeaveEndDate = start.AddDays(400);
+            AssertEqual(true, viewModel.LongLeaveStatus.Contains("exceeds one year"), "Long leave warning shown");
+            viewModel.LongLeaveStartDate = DateTime.Today.AddDays(-1);
+            viewModel.LongLeaveEndDate = DateTime.Today.AddDays(5);
+            AssertEqual(true, viewModel.LongLeaveStatus.Contains("past"), "Past start warning shown");
+            viewModel.LongLeaveStartDate = start;
+            viewModel.LongLeaveEndDate = start.AddDays(14);
+
+            viewModel.SelectedScheduleSourceDisplayName = "Weekly schedule";
+            viewModel.SelectedTemplateTarget = TemplateTargetProfile.Primary;
+            viewModel.SelectedApplyProfile = TemplateTargetProfile.Primary;
+            viewModel.SelectedScheduleSourceDisplayName = "Long leave";
+            AssertEqual(TemplateTargetProfile.Primary, viewModel.SelectedTemplateTarget, "Later switch preserves suggestion profile");
+            AssertEqual(TemplateTargetProfile.Primary, viewModel.SelectedApplyProfile, "Later switch preserves apply profile");
+        });
+    }
+
+    public void StartupPreferenceTracksWindowsStartupState()
+    {
+        RunOnStaThread(() =>
+        {
+            _ = System.Windows.Application.Current ?? new System.Windows.Application();
+            var settings = new InMemorySettingsService();
+            var startup = new StubStartupService(isEnabled: true);
+            var viewModel = new OOFSponderModern.ViewModels.MainViewModel(
+                settings,
+                _scheduler,
+                new StubMailboxSettingsClient(),
+                new LocalOofTemplateGenerator(),
+                new MessageTemplateRenderer(),
+                new StubReleaseUpdateService(),
+                startup);
+
+            AssertEqual(true, viewModel.StartWithWindows, "Startup state loaded from Windows");
+            AssertEqual(true, settings.LoadAsync().Result.Preferences.StartWithWindows, "Startup preference synchronized on load");
+
+            viewModel.StartWithWindows = false;
+
+            AssertEqual(false, startup.IsEnabled, "Windows startup disabled");
+            AssertEqual(1, startup.SetEnabledCallCount, "Startup service called once");
+            AssertEqual(false, settings.LoadAsync().Result.Preferences.StartWithWindows, "Disabled startup preference stored");
+        });
+    }
+
+    private static void RunOnStaThread(Action action)
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception ex)
+            {
+                failure = ex;
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+        if (failure is not null)
+        {
+            throw new InvalidOperationException("STA regression test failed.", failure);
+        }
     }
 
     private static List<ScheduleDay> CreateDefaultSchedule(bool allOffWork = false)
@@ -203,5 +455,34 @@ internal sealed class SchedulerServiceTests
         {
             throw new InvalidOperationException($"{name}: expected {expected}, actual {actual}");
         }
+    }
+}
+
+internal sealed class StubMailboxSettingsClient : IMailboxSettingsClient
+{
+    public Task<string> ApplyAsync(MailboxSettingsPreview preview, CancellationToken cancellationToken = default) =>
+        Task.FromResult("Applied by test stub.");
+
+    public Task<CurrentMailboxSettingsSummary> LoadCurrentSettingsAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(new CurrentMailboxSettingsSummary("test@example.com", "disabled", "none", "not scheduled", "not scheduled", false, false, 0, 0));
+}
+
+internal sealed class StubReleaseUpdateService : IReleaseUpdateService
+{
+    public Task<ReleaseInformation?> GetLatestReleaseAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<ReleaseInformation?>(null);
+}
+
+internal sealed class StubStartupService : IStartupService
+{
+    public StubStartupService(bool isEnabled = false) => IsEnabled = isEnabled;
+
+    public bool IsEnabled { get; private set; }
+    public int SetEnabledCallCount { get; private set; }
+
+    public void SetEnabled(bool enabled)
+    {
+        IsEnabled = enabled;
+        SetEnabledCallCount++;
     }
 }

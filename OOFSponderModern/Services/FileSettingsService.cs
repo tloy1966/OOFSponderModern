@@ -16,12 +16,20 @@ public sealed class FileSettingsService : ISettingsService
     private readonly string _settingsFilePath;
 
     public FileSettingsService()
-    {
-        var settingsFolder = Path.Combine(
+        : this(Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "OOFSponderModern");
+            "OOFSponderModern",
+            "usersettings.json"))
+    {
+    }
+
+    public FileSettingsService(string settingsFilePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(settingsFilePath);
+        _settingsFilePath = Path.GetFullPath(settingsFilePath);
+        var settingsFolder = Path.GetDirectoryName(_settingsFilePath)
+            ?? throw new ArgumentException("Settings path must include a directory.", nameof(settingsFilePath));
         Directory.CreateDirectory(settingsFolder);
-        _settingsFilePath = Path.Combine(settingsFolder, "usersettings.json");
     }
 
     public Task<AppState> LoadAsync(CancellationToken cancellationToken = default)
@@ -71,6 +79,7 @@ public sealed class FileSettingsService : ISettingsService
     private static void EnsureState(AppState state)
     {
         state.Messages ??= new MessageProfile();
+        state.LongLeave ??= InMemorySettingsService.CreateDefaultLongLeaveSettings();
         state.Sync ??= new SyncState();
         state.Preferences ??= new UserPreferences();
         state.Updates ??= new UpdateState();
@@ -83,20 +92,25 @@ public sealed class FileSettingsService : ISettingsService
 
     private static void MigrateState(AppState state)
     {
-        if (state.SchemaVersion >= 2)
+        if (state.SchemaVersion < 2)
         {
-            return;
+            foreach (var template in InMemorySettingsService.CreateDefaultMessageTemplates()
+                         .Where(template => template.Name != "Long Leave"))
+            {
+                state.MessageTemplates.Add(template);
+            }
+
+            state.Preferences.TemplateDisplayName = string.IsNullOrWhiteSpace(state.Preferences.TemplateDisplayName)
+                ? Environment.UserName
+                : state.Preferences.TemplateDisplayName;
         }
 
-        foreach (var template in InMemorySettingsService.CreateDefaultMessageTemplates())
+        if (state.SchemaVersion < 3 && state.LongLeave.Start == default)
         {
-            state.MessageTemplates.Add(template);
+            state.LongLeave = InMemorySettingsService.CreateDefaultLongLeaveSettings();
         }
 
-        state.Preferences.TemplateDisplayName = string.IsNullOrWhiteSpace(state.Preferences.TemplateDisplayName)
-            ? Environment.UserName
-            : state.Preferences.TemplateDisplayName;
-        state.SchemaVersion = 2;
+        state.SchemaVersion = 3;
     }
 
     private static void EnsureDefaultMessageTemplates(AppState state)

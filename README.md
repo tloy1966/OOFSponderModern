@@ -11,6 +11,7 @@ It is a Windows WPF app targeting .NET 10. It does not run a background schedule
 ## Features
 
 - Weekly working-hours editor with off-work days and 30-minute adjustment buttons.
+- Explicit long-leave intervals that do not modify normal weekly hours.
 - Optional linked start/end adjustments that preserve the workday duration.
 - Primary and Extended internal/external message profiles.
 - Named local message templates with schedule-aware variables and resolved previews.
@@ -62,7 +63,7 @@ Run the console scheduler regression checks:
 dotnet run --project .\OOFSponderModern.Tests\OOFSponderModern.Tests.csproj --configuration Release
 ```
 
-The regression harness covers scheduler boundaries, all-off-work behavior, linked time adjustment, production default hours, and a daylight-saving transition.
+The regression harness covers scheduler boundaries, all-off-work behavior, explicit long-leave validation, linked time adjustment, production default hours, persistence, and daylight-saving transitions.
 
 Create the self-contained Windows x64 archive locally:
 
@@ -82,6 +83,10 @@ Set normal working hours and mark non-working days as `Off work`. The app calcul
 - During work: today's end through the next working start.
 - After work or on an off-work day: now through the next working start.
 - If every day is off: now through one week later.
+
+Use **Schedule source → Long leave** for a one-time multi-day absence. Enter explicit local start and return dates/times and an optional local label. The normal weekly schedule remains saved and unchanged. Invalid intervals cannot be previewed or applied; a past start must be adjusted to the current time through an additional confirmation before apply.
+
+The first time Long leave is selected, the Extended suggestion and apply profiles are selected as a safer default. They remain user-selectable afterward.
 
 Choose the Primary or Extended profile under `Profile to apply`, review the sanitized preview, then select `Apply to M365`. The app asks for confirmation before sending changes.
 
@@ -103,6 +108,8 @@ Named templates can be created, edited, and deleted in the Messages tab. Templat
 - `{ReturnDate}` and `{ReturnTime}`
 - `{Duration}`
 - `{UserName}`
+
+The same variables resolve against explicit long-leave dates when Long leave is the active schedule source. New installations also include a **Long Leave** template; existing customized template collections are not modified during migration.
 
 Select **Resolve preview** to replace variables using the current calculated OOF window. Unknown variables are reported instead of being silently removed. Select **Apply suggestion** to copy the resolved text into the selected Primary or Extended profile; this does not update Microsoft 365 until **Apply to M365** is confirmed.
 
