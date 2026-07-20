@@ -155,40 +155,42 @@
                                         <TextBlock Grid.Row="2" Grid.Column="3" Grid.ColumnSpan="2" Text="{Binding LongLeaveStatus}" Foreground="{DynamicResource AccentTextBrush}" TextWrapping="Wrap" VerticalAlignment="Center" />
                                     </Grid>
                                 </Border>
-                                <ItemsControl Grid.Row="2" ItemsSource="{Binding ScheduleDays}" IsEnabled="{Binding IsWeeklyScheduleMode}" ToolTip="Weekly hours are preserved while Long leave mode is active.">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Border BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1" CornerRadius="8" Padding="8" Margin="0,0,0,7" Background="{DynamicResource PanelSubtleBrush}">
-                                                <Grid>
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="120" />
-                                                        <ColumnDefinition Width="134" />
-                                                        <ColumnDefinition Width="134" />
-                                                        <ColumnDefinition Width="112" />
-                                                        <ColumnDefinition Width="*" />
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock Text="{Binding DayName}" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" />
-                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,0,10,0">
-                                                        <TextBox Text="{Binding StartTimeText, UpdateSourceTrigger=LostFocus}" Width="74" Margin="0,0,4,0" Padding="8,6" ToolTip="Workday start time. Type HH:mm, or use + / - to adjust by 30 minutes." />
-                                                        <StackPanel Width="22" VerticalAlignment="Center">
-                                                            <Button Content="+" Command="{Binding MoveStartLaterCommand}" Style="{StaticResource QuickTimeButtonStyle}" ToolTip="Start time plus 30 minutes" />
-                                                            <Button Content="-" Command="{Binding MoveStartEarlierCommand}" Style="{StaticResource QuickTimeButtonStyle}" ToolTip="Start time minus 30 minutes" Margin="0,2,0,0" />
+                                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                    <ItemsControl ItemsSource="{Binding ScheduleDays}" IsEnabled="{Binding IsWeeklyScheduleMode}" ToolTip="Weekly hours are preserved while Long leave mode is active.">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1" CornerRadius="8" Padding="8" Margin="0,0,0,7" Background="{DynamicResource PanelSubtleBrush}">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="120" />
+                                                            <ColumnDefinition Width="134" />
+                                                            <ColumnDefinition Width="134" />
+                                                            <ColumnDefinition Width="112" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="{Binding DayName}" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" />
+                                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,0,10,0">
+                                                            <TextBox Text="{Binding StartTimeText, UpdateSourceTrigger=LostFocus}" Width="74" Margin="0,0,4,0" Padding="8,6" ToolTip="Workday start time. Type HH:mm, or use + / - to adjust by 30 minutes." />
+                                                            <StackPanel Width="22" VerticalAlignment="Center">
+                                                                <Button Content="+" Command="{Binding MoveStartLaterCommand}" Style="{StaticResource QuickTimeButtonStyle}" ToolTip="Start time plus 30 minutes" />
+                                                                <Button Content="-" Command="{Binding MoveStartEarlierCommand}" Style="{StaticResource QuickTimeButtonStyle}" ToolTip="Start time minus 30 minutes" Margin="0,2,0,0" />
+                                                            </StackPanel>
                                                         </StackPanel>
-                                                    </StackPanel>
-                                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="0,0,10,0">
-                                                        <TextBox Text="{Binding EndTimeText, UpdateSourceTrigger=LostFocus}" Width="74" Margin="0,0,4,0" Padding="8,6" ToolTip="Workday end time. Type HH:mm, or use + / - to adjust by 30 minutes." />
-                                                        <StackPanel Width="22" VerticalAlignment="Center">
-                                                            <Button Content="+" Command="{Binding MoveEndLaterCommand}" Style="{StaticResource QuickTimeButtonStyle}" ToolTip="End time plus 30 minutes" />
-                                                            <Button Content="-" Command="{Binding MoveEndEarlierCommand}" Style="{StaticResource QuickTimeButtonStyle}" ToolTip="End time minus 30 minutes" Margin="0,2,0,0" />
+                                                        <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="0,0,10,0">
+                                                            <TextBox Text="{Binding EndTimeText, UpdateSourceTrigger=LostFocus}" Width="74" Margin="0,0,4,0" Padding="8,6" ToolTip="Workday end time. Type HH:mm, or use + / - to adjust by 30 minutes." />
+                                                            <StackPanel Width="22" VerticalAlignment="Center">
+                                                                <Button Content="+" Command="{Binding MoveEndLaterCommand}" Style="{StaticResource QuickTimeButtonStyle}" ToolTip="End time plus 30 minutes" />
+                                                                <Button Content="-" Command="{Binding MoveEndEarlierCommand}" Style="{StaticResource QuickTimeButtonStyle}" ToolTip="End time minus 30 minutes" Margin="0,2,0,0" />
+                                                            </StackPanel>
                                                         </StackPanel>
-                                                    </StackPanel>
-                                                    <CheckBox Grid.Column="3" Content="Off work" IsChecked="{Binding IsOffWork}" VerticalAlignment="Center" ToolTip="Mark this day as non-working. OOF stays active until the next working start." />
-                                                    <TextBlock Grid.Column="4" Text="{Binding VisualSummary}" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" TextWrapping="Wrap" />
-                                                </Grid>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
+                                                        <CheckBox Grid.Column="3" Content="Off work" IsChecked="{Binding IsOffWork}" VerticalAlignment="Center" ToolTip="Mark this day as non-working. OOF stays active until the next working start." />
+                                                        <TextBlock Grid.Column="4" Text="{Binding VisualSummary}" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
                             </Grid>
                         </Border>
 
