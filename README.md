@@ -65,6 +65,12 @@ dotnet run --project .\OOFSponderModern.Tests\OOFSponderModern.Tests.csproj --co
 
 The regression harness covers scheduler boundaries, all-off-work behavior, explicit long-leave validation, linked time adjustment, production default hours, persistence, and daylight-saving transitions.
 
+## Development standards
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) defines the coding conventions, architecture boundaries, persistence and privacy rules, feature workflow, required validation, and Definition of Done.
+- [docs/feature-catalog.md](docs/feature-catalog.md) maps every current feature to its owning code, saved state, safety constraints, and minimum regression coverage.
+- Cross-cutting features should have an acceptance plan under `docs/` before implementation; [docs/long-leave-feature-plan.md](docs/long-leave-feature-plan.md) is the current example.
+
 Create the self-contained Windows x64 archive locally:
 
 ```powershell
