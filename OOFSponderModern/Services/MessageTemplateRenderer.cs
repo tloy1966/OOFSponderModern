@@ -6,6 +6,8 @@ namespace OOFSponderModern.Services;
 
 public sealed partial class MessageTemplateRenderer : IMessageTemplateRenderer
 {
+    private static readonly CultureInfo EnglishCulture = CultureInfo.GetCultureInfo("en-US");
+
     public GeneratedOofTemplateResult Render(
         MessageTemplate template,
         OofWindow window,
@@ -14,10 +16,10 @@ public sealed partial class MessageTemplateRenderer : IMessageTemplateRenderer
     {
         var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            ["StartDate"] = window.Start.ToString("D", CultureInfo.CurrentCulture),
-            ["StartTime"] = window.Start.ToString("t", CultureInfo.CurrentCulture),
-            ["ReturnDate"] = window.End.ToString("D", CultureInfo.CurrentCulture),
-            ["ReturnTime"] = window.End.ToString("t", CultureInfo.CurrentCulture),
+            ["StartDate"] = window.Start.ToString("D", EnglishCulture),
+            ["StartTime"] = window.Start.ToString("t", EnglishCulture),
+            ["ReturnDate"] = window.End.ToString("D", EnglishCulture),
+            ["ReturnTime"] = window.End.ToString("t", EnglishCulture),
             ["Duration"] = FormatDuration(window.Duration),
             ["UserName"] = string.IsNullOrWhiteSpace(userName) ? Environment.UserName : userName.Trim()
         };

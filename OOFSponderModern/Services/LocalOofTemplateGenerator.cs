@@ -6,6 +6,8 @@ namespace OOFSponderModern.Services;
 
 public sealed class LocalOofTemplateGenerator : IOofTemplateGenerator
 {
+    private static readonly CultureInfo EnglishCulture = CultureInfo.GetCultureInfo("en-US");
+
     public Task<GeneratedOofTemplateResult> GenerateAsync(
         OofTemplateRequest request,
         CancellationToken cancellationToken = default)
@@ -51,7 +53,7 @@ public sealed class LocalOofTemplateGenerator : IOofTemplateGenerator
     }
 
     private static string FormatDateTime(DateTimeOffset value) =>
-        value.ToString("ddd, MMM d yyyy h:mm tt zzz", CultureInfo.CurrentCulture);
+        value.ToString("ddd, MMM d yyyy h:mm tt zzz", EnglishCulture);
 
     private static string FormatDuration(TimeSpan duration)
     {

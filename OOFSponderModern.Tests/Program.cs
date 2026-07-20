@@ -1,5 +1,6 @@
 using OOFSponderModern.Models;
 using OOFSponderModern.Services;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -16,6 +17,8 @@ tests.NextWorkingStartUsesPostDstOffset();
 tests.DefaultSettingsUseNineToSixWeekdays();
 tests.DefaultSettingsIncludeNamedMessageTemplates();
 tests.DefaultSettingsIncludeValidLongLeaveDraft();
+tests.LocalSuggestionDatesAreAlwaysEnglish();
+tests.SavedTemplateDatesAreAlwaysEnglish();
 tests.MessageTemplateVariablesResolveFromCurrentWindow();
 tests.MessageTemplateUnknownVariablesAreReported();
 tests.SemanticVersionsSortCorrectly();
@@ -171,6 +174,62 @@ internal sealed class SchedulerServiceTests
         AssertEqual(true, state.LongLeave.End > state.LongLeave.Start, "Default leave return follows start");
         AssertEqual("Long leave", state.LongLeave.Label, "Default leave label");
         AssertEqual(ScheduleSource.WeeklySchedule, state.Preferences.SelectedScheduleSource, "Default schedule source");
+    }
+
+    public void LocalSuggestionDatesAreAlwaysEnglish()
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("zh-TW");
+            var window = new OofWindow(
+                new DateTimeOffset(2026, 7, 17, 16, 21, 0, TimeSpan.FromHours(8)),
+                new DateTimeOffset(2026, 7, 20, 7, 0, 0, TimeSpan.FromHours(8)),
+                "test");
+            var request = new OofTemplateRequest(
+                window,
+                AudienceScope.ContactsOnly,
+                TemplateTargetProfile.Primary,
+                window.Start);
+
+            var result = new LocalOofTemplateGenerator().GenerateAsync(request).GetAwaiter().GetResult();
+
+            AssertEqual(true, result.InternalTemplate.Contains("Fri, Jul 17 2026 4:21 PM +08:00"), "English suggestion start");
+            AssertEqual(true, result.ExternalTemplate.Contains("Mon, Jul 20 2026 7:00 AM +08:00"), "English suggestion return");
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+    }
+
+    public void SavedTemplateDatesAreAlwaysEnglish()
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("zh-TW");
+            var window = new OofWindow(
+                new DateTimeOffset(2026, 7, 17, 16, 21, 0, TimeSpan.FromHours(8)),
+                new DateTimeOffset(2026, 7, 20, 7, 0, 0, TimeSpan.FromHours(8)),
+                "test");
+            var template = new MessageTemplate
+            {
+                InternalTemplate = "{StartDate} {StartTime} until {ReturnDate} {ReturnTime}",
+                ExternalTemplate = "Back {ReturnDate}"
+            };
+
+            var result = new MessageTemplateRenderer().Render(template, window, "Taylor", window.Start);
+
+            AssertEqual(
+                "Friday, July 17, 2026 4:21 PM until Monday, July 20, 2026 7:00 AM",
+                result.InternalTemplate,
+                "English saved-template dates");
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
     }
 
     public void MessageTemplateVariablesResolveFromCurrentWindow()
