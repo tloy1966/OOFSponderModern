@@ -87,7 +87,7 @@ public sealed class MainViewModel : ViewModelBase
         ScheduleDays = new ObservableCollection<ScheduleDayViewModel>(
             _state.WeeklySchedule
                 .OrderBy(day => (int)day.DayOfWeek)
-                .Select(day => new ScheduleDayViewModel(day, RecalculateWindow, () => IsLinkedTimeAdjustmentEnabled)));
+                .Select(day => new ScheduleDayViewModel(day, OnWeeklyScheduleChanged, () => IsLinkedTimeAdjustmentEnabled)));
 
         RecentActivity = new ObservableCollection<string>(_state.Sync.RecentActivity);
         MessageTemplates = new ObservableCollection<MessageTemplate>(_state.MessageTemplates.OrderBy(template => template.Name));
@@ -748,6 +748,12 @@ public sealed class MainViewModel : ViewModelBase
         preferences.WindowWidth = restoreBounds.Width;
         preferences.WindowHeight = restoreBounds.Height;
 
+        SaveSettingsNow();
+    }
+
+    private void OnWeeklyScheduleChanged()
+    {
+        RecalculateWindow();
         SaveSettingsNow();
     }
 

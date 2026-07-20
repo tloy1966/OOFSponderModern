@@ -1,5 +1,6 @@
 using OOFSponderModern.Models;
 using OOFSponderModern.Services;
+using OOFSponderModern.ViewModels;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -24,6 +25,7 @@ tests.MessageTemplateUnknownVariablesAreReported();
 tests.SemanticVersionsSortCorrectly();
 tests.SettingsCollectionsRoundTripThroughJson();
 tests.SchemaTwoSettingsMigrateWithoutChangingCustomTemplates();
+tests.WeeklyScheduleTimesPersistAcrossRestart();
 tests.LongLeaveViewModelWorkflowValidatesAndPreservesProfileChoice();
 tests.StartupPreferenceTracksWindowsStartupState();
 Console.WriteLine("OOFSponderModern regression tests passed.");
@@ -364,6 +366,33 @@ internal sealed class SchedulerServiceTests
         }
     }
 
+    public void WeeklyScheduleTimesPersistAcrossRestart()
+    {
+        RunOnStaThread(() =>
+        {
+            _ = System.Windows.Application.Current ?? new System.Windows.Application();
+            var directory = Path.Combine(Path.GetTempPath(), $"OOFSponderModern.Tests-{Guid.NewGuid():N}");
+            var settingsPath = Path.Combine(directory, "usersettings.json");
+            try
+            {
+                var firstViewModel = CreateMainViewModel(new FileSettingsService(settingsPath));
+                var monday = firstViewModel.ScheduleDays.Single(day => day.Model.DayOfWeek == DayOfWeek.Monday);
+
+                monday.StartTimeText = "08:30";
+                monday.EndTimeText = "17:30";
+
+                var restartedViewModel = CreateMainViewModel(new FileSettingsService(settingsPath));
+                var reloadedMonday = restartedViewModel.ScheduleDays.Single(day => day.Model.DayOfWeek == DayOfWeek.Monday);
+                AssertEqual("08:30", reloadedMonday.StartTimeText, "Reloaded Monday start time");
+                AssertEqual("17:30", reloadedMonday.EndTimeText, "Reloaded Monday end time");
+            }
+            finally
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        });
+    }
+
     public void LongLeaveViewModelWorkflowValidatesAndPreservesProfileChoice()
     {
         RunOnStaThread(() =>
@@ -494,6 +523,16 @@ internal sealed class SchedulerServiceTests
             throw new InvalidOperationException("STA regression test failed.", failure);
         }
     }
+
+    private MainViewModel CreateMainViewModel(ISettingsService settingsService) =>
+        new(
+            settingsService,
+            _scheduler,
+            new StubMailboxSettingsClient(),
+            new LocalOofTemplateGenerator(),
+            new MessageTemplateRenderer(),
+            new StubReleaseUpdateService(),
+            new StubStartupService());
 
     private static List<ScheduleDay> CreateDefaultSchedule(bool allOffWork = false)
     {

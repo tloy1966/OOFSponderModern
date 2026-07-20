@@ -1,4 +1,6 @@
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
 using OOFSponderModern.Services;
 using OOFSponderModern.ViewModels;
 
@@ -36,6 +38,11 @@ public partial class MainWindow : Window
 
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
+        if (Keyboard.FocusedElement is TextBox focusedTextBox)
+        {
+            focusedTextBox.GetBindingExpression(TextBox.TextProperty)?.UpdateSource();
+        }
+
         if (DataContext is MainViewModel viewModel)
         {
             viewModel.SaveWindowPlacement(this);
