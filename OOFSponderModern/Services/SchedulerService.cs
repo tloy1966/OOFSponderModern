@@ -23,25 +23,20 @@ public sealed class SchedulerService : ISchedulerService
             return new OofWindow(now, now.AddDays(7), "All days are marked off work; preview keeps OOF active for one week.");
         }
 
+        if (TryGetActiveWorkingEnd(weeklySchedule, now, out var activeWorkingEnd))
+        {
+            var nextStart = FindNextWorkingStart(weeklySchedule, activeWorkingEnd.AddSeconds(1));
+            return new OofWindow(activeWorkingEnd, nextStart, "Currently in working hours; schedule OOF when the current work period ends through the next working start.");
+        }
+
         var today = GetDay(weeklySchedule, now.DayOfWeek);
         if (today is not null && !today.IsOffWork)
         {
             var todayStart = AtLocalTime(now.Date, today.StartTime);
-            var todayEnd = AtLocalTime(now.Date, today.EndTime);
-            if (todayEnd <= todayStart)
-            {
-                todayEnd = AtLocalTime(now.Date.AddDays(1), today.EndTime);
-            }
 
             if (now < todayStart)
             {
                 return new OofWindow(now, todayStart, "Before today's working hours; keep OOF active until today's start.");
-            }
-
-            if (now <= todayEnd)
-            {
-                var nextStart = FindNextWorkingStart(weeklySchedule, todayEnd.AddSeconds(1));
-                return new OofWindow(todayEnd, nextStart, "Currently in working hours; schedule OOF from today's end through the next working start.");
             }
 
             return new OofWindow(now, FindNextWorkingStart(weeklySchedule, now.AddSeconds(1)), "After today's working hours; keep OOF active through the next working start.");
@@ -63,22 +58,39 @@ public sealed class SchedulerService : ISchedulerService
         return new OofWindow(start, end, "Explicit long-leave interval.");
     }
 
-    public bool IsWithinWorkingHours(IReadOnlyList<ScheduleDay> weeklySchedule, DateTimeOffset now)
+    public bool IsWithinWorkingHours(IReadOnlyList<ScheduleDay> weeklySchedule, DateTimeOffset now) =>
+        TryGetActiveWorkingEnd(weeklySchedule, now, out _);
+
+    private bool TryGetActiveWorkingEnd(
+        IReadOnlyList<ScheduleDay> weeklySchedule,
+        DateTimeOffset now,
+        out DateTimeOffset activeWorkingEnd)
     {
-        var today = GetDay(weeklySchedule, now.DayOfWeek);
-        if (today is null || today.IsOffWork)
+        activeWorkingEnd = default;
+        var isActive = false;
+        foreach (var date in new[] { now.Date.AddDays(-1), now.Date })
         {
-            return false;
+            var day = GetDay(weeklySchedule, date.DayOfWeek);
+            if (day is null || day.IsOffWork)
+            {
+                continue;
+            }
+
+            var start = AtLocalTime(date, day.StartTime);
+            var end = AtLocalTime(date, day.EndTime);
+            if (end <= start)
+            {
+                end = AtLocalTime(date.AddDays(1), day.EndTime);
+            }
+
+            if (now >= start && now <= end && (!isActive || end > activeWorkingEnd))
+            {
+                activeWorkingEnd = end;
+                isActive = true;
+            }
         }
 
-        var start = AtLocalTime(now.Date, today.StartTime);
-        var end = AtLocalTime(now.Date, today.EndTime);
-        if (end <= start)
-        {
-            end = AtLocalTime(now.Date.AddDays(1), today.EndTime);
-        }
-
-        return now >= start && now <= end;
+        return isActive;
     }
 
     private static ScheduleDay? GetDay(IReadOnlyList<ScheduleDay> schedule, DayOfWeek dayOfWeek) =>

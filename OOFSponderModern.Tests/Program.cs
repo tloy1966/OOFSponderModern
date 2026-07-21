@@ -8,6 +8,8 @@ using System.Text.Json.Serialization;
 var tests = new SchedulerServiceTests();
 tests.BeforeWorkingHoursStartsAtNow();
 tests.DuringWorkingHoursStartsAtWorkdayEnd();
+tests.OvernightWorkingHoursContinueAfterMidnight();
+tests.OvernightWorkingHoursPreserveDstOffsets();
 tests.OffWorkDayStartsAtNow();
 tests.AllOffWorkUsesOneWeekWindow();
 tests.LongLeaveUsesExplicitWindow();
@@ -55,6 +57,49 @@ internal sealed class SchedulerServiceTests
 
         AssertEqual(new DateTimeOffset(2026, 7, 10, 18, 0, 0, TimeSpan.FromHours(8)), window.Start, nameof(window.Start));
         AssertEqual(new DateTimeOffset(2026, 7, 13, 9, 0, 0, TimeSpan.FromHours(8)), window.End, nameof(window.End));
+    }
+
+    public void OvernightWorkingHoursContinueAfterMidnight()
+    {
+        var schedule = CreateDefaultSchedule();
+        var monday = schedule.Single(day => day.DayOfWeek == DayOfWeek.Monday);
+        monday.StartTime = new TimeSpan(18, 0, 0);
+        monday.EndTime = new TimeSpan(9, 0, 0);
+        schedule.Single(day => day.DayOfWeek == DayOfWeek.Tuesday).IsOffWork = true;
+        var beforeMidnight = new DateTimeOffset(2026, 7, 20, 23, 0, 0, TimeSpan.FromHours(8));
+        var now = new DateTimeOffset(2026, 7, 21, 1, 0, 0, TimeSpan.FromHours(8));
+        var exactEnd = new DateTimeOffset(2026, 7, 21, 9, 0, 0, TimeSpan.FromHours(8));
+        var afterEnd = exactEnd.AddSeconds(1);
+
+        var isWorking = _scheduler.IsWithinWorkingHours(schedule, now);
+        var window = _scheduler.CalculateNextWindow(schedule, now);
+
+        AssertEqual(true, _scheduler.IsWithinWorkingHours(schedule, beforeMidnight), "Overnight shift active before midnight");
+        AssertEqual(true, isWorking, "Overnight shift remains active after midnight");
+        AssertEqual(true, _scheduler.IsWithinWorkingHours(schedule, exactEnd), "Overnight shift includes exact end");
+        AssertEqual(false, _scheduler.IsWithinWorkingHours(schedule, afterEnd), "Overnight shift ends after exact end");
+        AssertEqual(new DateTimeOffset(2026, 7, 21, 9, 0, 0, TimeSpan.FromHours(8)), window.Start, "Overnight OOF start");
+        AssertEqual(new DateTimeOffset(2026, 7, 22, 9, 0, 0, TimeSpan.FromHours(8)), window.End, "Overnight next working start");
+    }
+
+    public void OvernightWorkingHoursPreserveDstOffsets()
+    {
+        var pacificTime = TimeZoneInfo.FindSystemTimeZoneById("Pacific Standard Time");
+        var scheduler = new SchedulerService(pacificTime);
+        var schedule = CreateDefaultSchedule(allOffWork: true);
+        var saturday = schedule.Single(day => day.DayOfWeek == DayOfWeek.Saturday);
+        saturday.IsOffWork = false;
+        saturday.StartTime = new TimeSpan(18, 0, 0);
+        saturday.EndTime = new TimeSpan(9, 0, 0);
+        var monday = schedule.Single(day => day.DayOfWeek == DayOfWeek.Monday);
+        monday.IsOffWork = false;
+        var now = new DateTimeOffset(2026, 3, 8, 3, 30, 0, TimeSpan.FromHours(-7));
+
+        var window = scheduler.CalculateNextWindow(schedule, now);
+
+        AssertEqual(true, scheduler.IsWithinWorkingHours(schedule, now), "DST overnight shift remains active");
+        AssertEqual(new DateTimeOffset(2026, 3, 8, 9, 0, 0, TimeSpan.FromHours(-7)), window.Start, "DST overnight OOF start");
+        AssertEqual(new DateTimeOffset(2026, 3, 9, 9, 0, 0, TimeSpan.FromHours(-7)), window.End, "DST overnight next start");
     }
 
     public void OffWorkDayStartsAtNow()
