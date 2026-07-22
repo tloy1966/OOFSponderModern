@@ -4,6 +4,7 @@ public sealed class UserPreferences
 {
     public bool IsDarkMode { get; set; }
     public bool StartWithWindows { get; set; }
+    public bool IsAutomaticSyncEnabled { get; set; }
     public bool IsLinkedTimeAdjustmentEnabled { get; set; } = true;
     public ScheduleSource SelectedScheduleSource { get; set; } = ScheduleSource.WeeklySchedule;
     public bool HasInitializedLongLeaveProfile { get; set; }

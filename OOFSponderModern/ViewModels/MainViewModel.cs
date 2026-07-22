@@ -10,8 +10,9 @@ using OOFSponderModern.Services;
 
 namespace OOFSponderModern.ViewModels;
 
-public sealed class MainViewModel : ViewModelBase
+public sealed class MainViewModel : ViewModelBase, IDisposable
 {
+    private static readonly TimeSpan AutomaticSyncInterval = TimeSpan.FromMinutes(10);
     private readonly ISchedulerService _scheduler;
     private readonly IMailboxSettingsClient _mailboxClient;
     private readonly IOofTemplateGenerator _templateGenerator;
@@ -21,6 +22,8 @@ public sealed class MainViewModel : ViewModelBase
     private readonly IStartupService _startupService;
     private readonly AppState _state;
     private CancellationTokenSource? _saveSettingsDebounce;
+    private CancellationTokenSource? _automaticSyncCancellation;
+    private Task? _automaticSyncTask;
     private OofWindow _currentWindow;
     private GeneratedOofTemplateResult? _generatedTemplate;
     private string _currentOofMode = string.Empty;
@@ -43,6 +46,8 @@ public sealed class MainViewModel : ViewModelBase
     private string _currentM365SettingsText = "Current Microsoft 365 automatic reply settings have not been loaded yet.";
     private bool _isDarkMode;
     private bool _startWithWindows;
+    private bool _isAutomaticSyncEnabled;
+    private string _automaticSyncStatus = "Automatic sync is off.";
     private bool _isLinkedTimeAdjustmentEnabled = true;
     private ScheduleSource _selectedScheduleSource;
     private DateTime? _longLeaveStartDate;
@@ -103,6 +108,10 @@ public sealed class MainViewModel : ViewModelBase
         _isDarkMode = _state.Preferences.IsDarkMode;
         _startWithWindows = startupService.IsEnabled;
         _state.Preferences.StartWithWindows = _startWithWindows;
+        _isAutomaticSyncEnabled = _state.Preferences.IsAutomaticSyncEnabled;
+        _automaticSyncStatus = _isAutomaticSyncEnabled
+            ? "Automatic sync will start when the app finishes loading."
+            : "Automatic sync is off.";
         _isLinkedTimeAdjustmentEnabled = _state.Preferences.IsLinkedTimeAdjustmentEnabled;
         _isOnboardingVisible = !_state.Preferences.IsOnboardingDismissed;
         _selectedThemePalette = _state.Preferences.ThemePalette;
@@ -247,6 +256,10 @@ public sealed class MainViewModel : ViewModelBase
             OnPropertyChanged(nameof(IsLongLeaveMode));
             OnPropertyChanged(nameof(IsWeeklyScheduleMode));
             RecalculateWindow();
+            if (IsAutomaticSyncEnabled)
+            {
+                RestartAutomaticSync();
+            }
             AddActivity(value == ScheduleSource.LongLeave
                 ? "Selected explicit long-leave schedule mode."
                 : "Selected weekly schedule mode.");
@@ -452,6 +465,37 @@ public sealed class MainViewModel : ViewModelBase
                 AddActivity($"Could not update Windows startup: {ex.Message}");
             }
         }
+    }
+
+    public bool IsAutomaticSyncEnabled
+    {
+        get => _isAutomaticSyncEnabled;
+        set
+        {
+            if (!SetProperty(ref _isAutomaticSyncEnabled, value))
+            {
+                return;
+            }
+
+            _state.Preferences.IsAutomaticSyncEnabled = value;
+            QueueSaveSettings();
+            if (value)
+            {
+                AutomaticSyncStatus = "Automatic sync is starting.";
+                StartAutomaticSync();
+            }
+            else
+            {
+                StopAutomaticSync();
+                AutomaticSyncStatus = "Automatic sync is off.";
+            }
+        }
+    }
+
+    public string AutomaticSyncStatus
+    {
+        get => _automaticSyncStatus;
+        private set => SetProperty(ref _automaticSyncStatus, value);
     }
 
     public ThemePalette SelectedThemePalette
@@ -723,7 +767,63 @@ public sealed class MainViewModel : ViewModelBase
         private set => SetProperty(ref _updateStatusText, value);
     }
 
-    public Task InitializeAsync() => CheckForUpdatesAsync(force: false);
+    public Task InitializeAsync()
+    {
+        if (IsAutomaticSyncEnabled)
+        {
+            StartAutomaticSync();
+        }
+
+        return CheckForUpdatesAsync(force: false);
+    }
+
+    public async Task RunAutomaticSyncOnceAsync(CancellationToken cancellationToken = default)
+    {
+        if (!IsAutomaticSyncEnabled)
+        {
+            AutomaticSyncStatus = "Automatic sync is off.";
+            return;
+        }
+
+        if (IsLongLeaveMode)
+        {
+            AutomaticSyncStatus = "Automatic weekly sync is paused while Long leave is selected.";
+            return;
+        }
+
+        try
+        {
+            RecalculateWindow(queueSave: false, markTemplateStale: false);
+            AutomaticSyncStatus = "Checking Microsoft 365 automatic replies...";
+            var result = await _mailboxClient.SyncIfChangedAsync(BuildPreview(), cancellationToken);
+            var action = result.WasApplied ? "applied the next weekly interval" : "found no changes needed";
+            AutomaticSyncStatus = $"Automatic sync {action} at {DateTimeOffset.Now:t}. Next check in 10 minutes.";
+            SyncStatus = result.WasApplied ? "Automatic weekly sync applied" : "Automatic weekly sync current";
+            AuthState = $"Connected as {result.MailboxUser}";
+            AddActivity($"Automatic weekly sync {action}. Message bodies omitted.");
+        }
+        catch (AutomaticSyncAuthenticationRequiredException)
+        {
+            AutomaticSyncStatus = "Automatic sync is waiting for sign-in. Use Apply to M365 once, then it will retry.";
+            AuthState = "Sign-in required for automatic sync";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            AutomaticSyncStatus = $"Automatic sync failed ({ex.GetType().Name}) and will retry in 10 minutes.";
+            SyncStatus = "Automatic weekly sync retry pending";
+        }
+    }
+
+    public void Dispose()
+    {
+        StopAutomaticSync();
+        _saveSettingsDebounce?.Cancel();
+        _saveSettingsDebounce?.Dispose();
+        _saveSettingsDebounce = null;
+    }
 
     public void RestoreWindowPlacement(Window window)
     {
@@ -757,7 +857,7 @@ public sealed class MainViewModel : ViewModelBase
         SaveSettingsNow();
     }
 
-    private void RecalculateWindow()
+    private void RecalculateWindow(bool queueSave = true, bool markTemplateStale = true)
     {
         var now = DateTimeOffset.Now;
         if (IsLongLeaveMode)
@@ -790,8 +890,56 @@ public sealed class MainViewModel : ViewModelBase
         ScheduleStatus = $"Schedule recalculated at {DateTimeOffset.Now:t}";
         OnPropertyChanged(nameof(AudienceScopeText));
         PreviewText = BuildPreviewText(BuildPreview());
-        QueueSaveSettings();
-        MarkGeneratedTemplateStale("Schedule changed; regenerate the template preview before applying.");
+        if (queueSave)
+        {
+            QueueSaveSettings();
+        }
+
+        if (markTemplateStale)
+        {
+            MarkGeneratedTemplateStale("Schedule changed; regenerate the template preview before applying.");
+        }
+    }
+
+    private void StartAutomaticSync()
+    {
+        if (_automaticSyncCancellation is not null)
+        {
+            return;
+        }
+
+        _automaticSyncCancellation = new CancellationTokenSource();
+        _automaticSyncTask = RunAutomaticSyncLoopAsync(_automaticSyncCancellation.Token);
+    }
+
+    private void StopAutomaticSync()
+    {
+        _automaticSyncCancellation?.Cancel();
+        _automaticSyncCancellation?.Dispose();
+        _automaticSyncCancellation = null;
+        _automaticSyncTask = null;
+    }
+
+    private void RestartAutomaticSync()
+    {
+        StopAutomaticSync();
+        StartAutomaticSync();
+    }
+
+    private async Task RunAutomaticSyncLoopAsync(CancellationToken cancellationToken)
+    {
+        await RunAutomaticSyncOnceAsync(cancellationToken);
+        using var timer = new PeriodicTimer(AutomaticSyncInterval);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                await RunAutomaticSyncOnceAsync(cancellationToken);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
     }
 
     private void UpdateLongLeaveWindow()

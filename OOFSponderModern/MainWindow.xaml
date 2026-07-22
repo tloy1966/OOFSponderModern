@@ -428,6 +428,9 @@
                                 <TextBlock Text="Microsoft 365 Safety" Style="{StaticResource SectionTitleStyle}" />
                                 <TextBlock Text="Apply behavior" Style="{StaticResource LabelTextStyle}" />
                                 <TextBlock Text="Apply to M365 shows a review prompt before Microsoft Graph is updated. Message bodies are omitted from diagnostics and activity logs." Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,8,0,14" />
+                                <TextBlock Text="Automatic weekly sync" Style="{StaticResource LabelTextStyle}" />
+                                <CheckBox Content="Update Microsoft 365 every 10 minutes while this app is open" IsChecked="{Binding IsAutomaticSyncEnabled}" Margin="0,8,0,8" ToolTip="Uses silent sign-in and updates Microsoft 365 only when the calculated weekly interval or selected messages differ." />
+                                <TextBlock Text="{Binding AutomaticSyncStatus}" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,14" />
                                 <TextBlock Text="Current apply profile" Style="{StaticResource LabelTextStyle}" />
                                 <TextBlock Text="{Binding ApplyProfileText}" Foreground="{DynamicResource TextPrimaryBrush}" FontWeight="SemiBold" Margin="0,8,0,0" />
                             </StackPanel>

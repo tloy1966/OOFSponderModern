@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -40,6 +41,40 @@ public sealed class GraphMailboxSettingsClient : IMailboxSettingsClient
     public async Task<string> ApplyAsync(MailboxSettingsPreview preview, CancellationToken cancellationToken = default)
     {
         var result = await AcquireTokenAsync(cancellationToken);
+        await ApplyWithTokenAsync(preview, result, cancellationToken);
+
+        return $"Microsoft 365 automatic replies updated for {result.Account.Username}. {preview.ActiveProfile} profile applied from {preview.Window.Start:g} to {preview.Window.End:g} with audience {preview.AudienceScope}. Message bodies omitted.";
+    }
+
+    public async Task<AutomaticSyncResult> SyncIfChangedAsync(
+        MailboxSettingsPreview preview,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await AcquireTokenSilentAsync(cancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Get, MailboxSettingsUri);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", result.AccessToken);
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException($"Graph GET failed: {(int)response.StatusCode} {response.ReasonPhrase}.");
+        }
+
+        if (SettingsMatch(responseBody, preview, DateTimeOffset.Now))
+        {
+            return new AutomaticSyncResult(false, result.Account.Username);
+        }
+
+        await ApplyWithTokenAsync(preview, result, cancellationToken);
+        return new AutomaticSyncResult(true, result.Account.Username);
+    }
+
+    private async Task ApplyWithTokenAsync(
+        MailboxSettingsPreview preview,
+        AuthenticationResult result,
+        CancellationToken cancellationToken)
+    {
         using var request = new HttpRequestMessage(new HttpMethod("PATCH"), MailboxSettingsUri)
         {
             Content = new StringContent(CreatePayload(preview), Encoding.UTF8, "application/json")
@@ -47,13 +82,10 @@ public sealed class GraphMailboxSettingsClient : IMailboxSettingsClient
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", result.AccessToken);
 
         using var response = await _httpClient.SendAsync(request, cancellationToken);
-        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            throw new InvalidOperationException($"Graph PATCH failed: {(int)response.StatusCode} {response.ReasonPhrase}. {responseBody}");
+            throw new InvalidOperationException($"Graph PATCH failed: {(int)response.StatusCode} {response.ReasonPhrase}.");
         }
-
-        return $"Microsoft 365 automatic replies updated for {result.Account.Username}. {preview.ActiveProfile} profile applied from {preview.Window.Start:g} to {preview.Window.End:g} with audience {preview.AudienceScope}. Message bodies omitted.";
     }
 
     private async Task<AuthenticationResult> AcquireTokenAsync(CancellationToken cancellationToken)
@@ -77,6 +109,25 @@ public sealed class GraphMailboxSettingsClient : IMailboxSettingsClient
             .AcquireTokenInteractive(Scopes)
             .WithPrompt(Prompt.SelectAccount)
             .ExecuteAsync(cancellationToken);
+    }
+
+    private async Task<AuthenticationResult> AcquireTokenSilentAsync(CancellationToken cancellationToken)
+    {
+        var publicClientApplication = await GetPublicClientApplicationAsync(cancellationToken);
+        var account = (await publicClientApplication.GetAccountsAsync()).FirstOrDefault();
+        if (account is null)
+        {
+            throw new AutomaticSyncAuthenticationRequiredException();
+        }
+
+        try
+        {
+            return await publicClientApplication.AcquireTokenSilent(Scopes, account).ExecuteAsync(cancellationToken);
+        }
+        catch (MsalUiRequiredException)
+        {
+            throw new AutomaticSyncAuthenticationRequiredException();
+        }
     }
 
     private async Task<IPublicClientApplication> GetPublicClientApplicationAsync(CancellationToken cancellationToken)
@@ -164,6 +215,70 @@ public sealed class GraphMailboxSettingsClient : IMailboxSettingsClient
         AudienceScope.AllExternal => "all",
         _ => "contactsOnly"
     };
+
+    internal static bool SettingsMatch(
+        string responseBody,
+        MailboxSettingsPreview preview,
+        DateTimeOffset now)
+    {
+        using var document = JsonDocument.Parse(responseBody);
+        var root = document.RootElement;
+        if (!root.TryGetProperty("automaticRepliesSetting", out var setting))
+        {
+            return false;
+        }
+
+        var expectedExternalMessage = preview.AudienceScope == AudienceScope.None
+            ? string.Empty
+            : preview.ActiveExternalMessage;
+        return string.Equals(ReadString(setting, "status"), "scheduled", StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(ReadString(setting, "externalAudience"), ToGraphAudience(preview.AudienceScope), StringComparison.OrdinalIgnoreCase) &&
+             GraphStartDateTimeMatches(setting, preview.Window.Start, now) &&
+               GraphDateTimeMatches(setting, "scheduledEndDateTime", preview.Window.End) &&
+               string.Equals(ReadString(setting, "internalReplyMessage"), preview.ActiveInternalMessage, StringComparison.Ordinal) &&
+               string.Equals(ReadString(setting, "externalReplyMessage"), expectedExternalMessage, StringComparison.Ordinal);
+    }
+
+    private static bool GraphStartDateTimeMatches(
+        JsonElement setting,
+        DateTimeOffset expected,
+        DateTimeOffset now)
+    {
+        if (!TryReadGraphDateTime(setting, "scheduledStartDateTime", out var actualDateTime))
+        {
+            return false;
+        }
+
+        var expectedLocal = TimeZoneInfo.ConvertTime(expected, TimeZoneInfo.Local).DateTime;
+        var nowLocal = TimeZoneInfo.ConvertTime(now, TimeZoneInfo.Local).DateTime;
+        return actualDateTime == expectedLocal ||
+               actualDateTime <= nowLocal && expectedLocal <= nowLocal;
+    }
+
+    private static bool GraphDateTimeMatches(JsonElement setting, string propertyName, DateTimeOffset expected)
+    {
+        return TryReadGraphDateTime(setting, propertyName, out var actualDateTime) &&
+               actualDateTime == TimeZoneInfo.ConvertTime(expected, TimeZoneInfo.Local).DateTime;
+    }
+
+    private static bool TryReadGraphDateTime(
+        JsonElement setting,
+        string propertyName,
+        out DateTime actualDateTime)
+    {
+        actualDateTime = default;
+        if (!setting.TryGetProperty(propertyName, out var property) || property.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        return DateTime.TryParse(
+                   ReadString(property, "dateTime"),
+                   CultureInfo.InvariantCulture,
+                   DateTimeStyles.AllowWhiteSpaces,
+                   out actualDateTime) &&
+               string.Equals(ReadString(property, "timeZone"), TimeZoneInfo.Local.Id, StringComparison.OrdinalIgnoreCase);
+    }
 
     private static CurrentMailboxSettingsSummary ParseCurrentSettings(string responseBody, string mailboxUser)
     {

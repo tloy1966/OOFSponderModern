@@ -50,4 +50,14 @@ public partial class MainWindow : Window
 
         base.OnClosing(e);
     }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        if (DataContext is IDisposable disposable)
+        {
+            disposable.Dispose();
+        }
+
+        base.OnClosed(e);
+    }
 }

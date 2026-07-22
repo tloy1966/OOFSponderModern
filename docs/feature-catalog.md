@@ -50,15 +50,15 @@ This catalog is the implementation map for current behavior. Use it before chang
 
 ## Microsoft 365 apply and readback
 
-**Behavior:** Authenticate with MSAL, display sanitized current mailbox status, preview a local payload, and manually PATCH automatic replies after confirmation.
+**Behavior:** Authenticate with MSAL, display sanitized current mailbox status, preview a local payload, manually PATCH after confirmation, and optionally keep the weekly interval current every 10 minutes while the app is open.
 
 **Owners:** `GraphMailboxSettingsClient`, `IMailboxSettingsClient`, `MailboxSettingsPreview`, `CurrentMailboxSettingsSummary`, and apply/readback commands in `MainViewModel`.
 
 **Permissions:** delegated `user.read` and `MailboxSettings.ReadWrite`.
 
-**Safety:** no background apply, no remote message import, no message bodies in diagnostics, validated local-time interval, and selected profile/audience only.
+**Safety:** automatic sync is opt-in, uses silent authentication, compares remote state before PATCH, pauses during Long leave, and stops when the app exits. No remote message import, no message bodies in diagnostics, validated local-time interval, and selected profile/audience only.
 
-**Minimum regression coverage:** payload schedule/profile/audience mapping, invalid-window blocking, sanitization, cancellation, and Graph error status.
+**Minimum regression coverage:** payload schedule/profile/audience mapping, compare-before-apply behavior, stable active intervals, Long Leave pause, invalid-window blocking, silent-auth requirements, cancellation, sanitization, and Graph error status.
 
 ## Local settings and startup
 

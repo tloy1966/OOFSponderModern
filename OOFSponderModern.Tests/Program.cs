@@ -22,12 +22,14 @@ tests.DefaultSettingsIncludeNamedMessageTemplates();
 tests.DefaultSettingsIncludeValidLongLeaveDraft();
 tests.LocalSuggestionDatesAreAlwaysEnglish();
 tests.SavedTemplateDatesAreAlwaysEnglish();
+tests.AutomaticSyncComparisonKeepsActiveIntervalStable();
 tests.MessageTemplateVariablesResolveFromCurrentWindow();
 tests.MessageTemplateUnknownVariablesAreReported();
 tests.SemanticVersionsSortCorrectly();
 tests.SettingsCollectionsRoundTripThroughJson();
 tests.SchemaTwoSettingsMigrateWithoutChangingCustomTemplates();
 tests.WeeklyScheduleTimesPersistAcrossRestart();
+tests.AutomaticWeeklySyncAppliesAndPausesForLongLeave();
 tests.LongLeaveViewModelWorkflowValidatesAndPreservesProfileChoice();
 tests.StartupPreferenceTracksWindowsStartupState();
 Console.WriteLine("OOFSponderModern regression tests passed.");
@@ -279,6 +281,50 @@ internal sealed class SchedulerServiceTests
         }
     }
 
+    public void AutomaticSyncComparisonKeepsActiveIntervalStable()
+    {
+        var nowLocal = new DateTime(2026, 7, 22, 18, 20, 0, DateTimeKind.Unspecified);
+        var timeZone = TimeZoneInfo.Local;
+        var now = new DateTimeOffset(nowLocal, timeZone.GetUtcOffset(nowLocal));
+        var expectedStart = now;
+        var expectedEnd = now.AddHours(14).AddMinutes(40);
+        var remoteStart = nowLocal.AddMinutes(-20);
+        var preview = new MailboxSettingsPreview(
+            new OofWindow(expectedStart, expectedEnd, "test"),
+            AudienceScope.ContactsOnly,
+            TemplateTargetProfile.Primary,
+            "Internal",
+            "External",
+            string.Empty,
+            string.Empty,
+            true,
+            true,
+            false,
+            false,
+            8,
+            8,
+            0,
+            0);
+        string CreateResponse(DateTime end) => JsonSerializer.Serialize(new
+        {
+            automaticRepliesSetting = new
+            {
+                status = "scheduled",
+                externalAudience = "contactsOnly",
+                scheduledStartDateTime = new { dateTime = remoteStart.ToString("yyyy-MM-ddTHH:mm:ss"), timeZone = timeZone.Id },
+                scheduledEndDateTime = new { dateTime = end.ToString("yyyy-MM-ddTHH:mm:ss"), timeZone = timeZone.Id },
+                internalReplyMessage = "Internal",
+                externalReplyMessage = "External"
+            }
+        });
+
+        var matchingResponse = CreateResponse(expectedEnd.LocalDateTime);
+        var changedEndResponse = CreateResponse(expectedEnd.LocalDateTime.AddMinutes(10));
+
+        AssertEqual(true, GraphMailboxSettingsClient.SettingsMatch(matchingResponse, preview, now), "Active interval start remains stable");
+        AssertEqual(false, GraphMailboxSettingsClient.SettingsMatch(changedEndResponse, preview, now), "Changed interval end requires sync");
+    }
+
     public void MessageTemplateVariablesResolveFromCurrentWindow()
     {
         var window = new OofWindow(
@@ -334,7 +380,8 @@ internal sealed class SchedulerServiceTests
                 Start = new DateTimeOffset(2026, 8, 3, 9, 0, 0, TimeSpan.FromHours(8)),
                 End = new DateTimeOffset(2026, 8, 21, 9, 0, 0, TimeSpan.FromHours(8)),
                 Label = "Sabbatical"
-            }
+            },
+            Preferences = new UserPreferences { IsAutomaticSyncEnabled = true }
         };
         state.WeeklySchedule.Add(new ScheduleDay
         {
@@ -357,6 +404,7 @@ internal sealed class SchedulerServiceTests
         AssertEqual("Custom template", roundTripped.MessageTemplates[0].Name, "Persisted template name");
         AssertEqual("Sabbatical", roundTripped.LongLeave.Label, "Persisted long-leave label");
         AssertEqual(state.LongLeave.End, roundTripped.LongLeave.End, "Persisted long-leave end");
+        AssertEqual(true, roundTripped.Preferences.IsAutomaticSyncEnabled, "Persisted automatic sync preference");
     }
 
     public void SchemaTwoSettingsMigrateWithoutChangingCustomTemplates()
@@ -435,6 +483,46 @@ internal sealed class SchedulerServiceTests
             {
                 Directory.Delete(directory, recursive: true);
             }
+        });
+    }
+
+    public void AutomaticWeeklySyncAppliesAndPausesForLongLeave()
+    {
+        RunOnStaThread(() =>
+        {
+            _ = System.Windows.Application.Current ?? new System.Windows.Application();
+            var settings = new InMemorySettingsService();
+            settings.LoadAsync().Result.Preferences.IsAutomaticSyncEnabled = true;
+            var mailboxClient = new StubMailboxSettingsClient
+            {
+                AutomaticSyncResult = new AutomaticSyncResult(true, "test@example.com")
+            };
+            using var viewModel = new MainViewModel(
+                settings,
+                _scheduler,
+                mailboxClient,
+                new LocalOofTemplateGenerator(),
+                new MessageTemplateRenderer(),
+                new StubReleaseUpdateService(),
+                new StubStartupService());
+
+            viewModel.RunAutomaticSyncOnceAsync().GetAwaiter().GetResult();
+
+            AssertEqual(1, mailboxClient.AutomaticSyncCallCount, "Automatic weekly sync call count");
+            AssertEqual(true, viewModel.AutomaticSyncStatus.Contains("applied"), "Automatic weekly sync applied status");
+            AssertEqual(true, settings.LoadAsync().Result.Preferences.IsAutomaticSyncEnabled, "Automatic sync preference persists");
+
+            viewModel.SelectedScheduleSource = ScheduleSource.LongLeave;
+            viewModel.RunAutomaticSyncOnceAsync().GetAwaiter().GetResult();
+
+            AssertEqual(1, mailboxClient.AutomaticSyncCallCount, "Long leave blocks automatic weekly sync");
+            AssertEqual(true, viewModel.AutomaticSyncStatus.Contains("paused"), "Long leave automatic sync status");
+
+            viewModel.IsAutomaticSyncEnabled = false;
+            viewModel.RunAutomaticSyncOnceAsync().GetAwaiter().GetResult();
+
+            AssertEqual(1, mailboxClient.AutomaticSyncCallCount, "Disabled automatic sync performs no Graph call");
+            AssertEqual("Automatic sync is off.", viewModel.AutomaticSyncStatus, "Disabled automatic sync status");
         });
     }
 
@@ -603,8 +691,17 @@ internal sealed class SchedulerServiceTests
 
 internal sealed class StubMailboxSettingsClient : IMailboxSettingsClient
 {
+    public AutomaticSyncResult AutomaticSyncResult { get; set; } = new(false, "test@example.com");
+    public int AutomaticSyncCallCount { get; private set; }
+
     public Task<string> ApplyAsync(MailboxSettingsPreview preview, CancellationToken cancellationToken = default) =>
         Task.FromResult("Applied by test stub.");
+
+    public Task<AutomaticSyncResult> SyncIfChangedAsync(MailboxSettingsPreview preview, CancellationToken cancellationToken = default)
+    {
+        AutomaticSyncCallCount++;
+        return Task.FromResult(AutomaticSyncResult);
+    }
 
     public Task<CurrentMailboxSettingsSummary> LoadCurrentSettingsAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult(new CurrentMailboxSettingsSummary("test@example.com", "disabled", "none", "not scheduled", "not scheduled", false, false, 0, 0));

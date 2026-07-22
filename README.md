@@ -1,8 +1,8 @@
 # OOFSponderModern
 
-OOFSponderModern calculates the next out-of-office interval from your weekly working hours and lets you review and manually apply that interval to Microsoft 365.
+OOFSponderModern calculates the next out-of-office interval from your weekly working hours and lets you review and apply that interval to Microsoft 365.
 
-It is a Windows WPF app targeting .NET 10. It does not run a background scheduler or automatically create later recurring intervals. Reopen the app and apply again when a new interval is needed.
+It is a Windows WPF app targeting .NET 10. Optional automatic weekly sync recalculates and applies the next interval every 10 minutes while the app remains open. It does not continue after the app exits.
 
 ## Screenshot
 
@@ -21,6 +21,7 @@ It is a Windows WPF app targeting .NET 10. It does not run a background schedule
 - Local rule-based message suggestions; no external text-generation service is called.
 - Light/dark mode with Productivity Blue, Trust Navy, Teal Mint, and Premium Gold palettes.
 - First-run guidance, automatic local settings persistence, and single-instance startup.
+- Optional automatic weekly sync while the app is open, using silent sign-in and compare-before-apply behavior.
 - DST-aware calculation of future local working times.
 - Non-blocking GitHub Release update notifications with no automatic download or install.
 
@@ -96,6 +97,8 @@ The first time Long leave is selected, the Extended suggestion and apply profile
 
 Choose the Primary or Extended profile under `Profile to apply`, review the sanitized preview, then select `Apply to M365`. The app asks for confirmation before sending changes.
 
+Under Configuration, enable **Automatic weekly sync** to keep advancing the scheduled interval every 10 minutes while OOFSponderModern remains open. The first Microsoft 365 apply must be completed interactively so automatic sync can reuse the cached account silently. Each check reads the current mailbox setting and sends a PATCH only when the interval, selected profile messages, or audience differ. Automatic weekly sync pauses while Long leave is selected and resumes when Weekly schedule is restored.
+
 ### Messages
 
 Edit the Primary and Extended internal/external replies. Message suggestions are generated locally and remain temporary until `Apply suggestion` copies them into a profile.
@@ -126,6 +129,7 @@ Configuration is grouped by purpose:
 - Appearance: light/dark mode and color palette.
 - Schedule Behavior: linked start/end time adjustment.
 - Microsoft 365 Safety: review behavior and selected apply profile.
+- Microsoft 365 Safety: optional automatic weekly sync and its current status.
 - Local App Settings: persistence and centered window behavior.
 
 ### Updates
@@ -166,7 +170,7 @@ User settings are stored at:
 %APPDATA%\OOFSponderModern\usersettings.json
 ```
 
-The file contains the weekly schedule, messages, named templates, template display name, audience, selected profiles, theme, palette, linked-time preference, first-run guidance state, window size, update-check metadata, sync state, and recent sanitized activity. Most edits are saved after a short debounce, with a final save when the main window closes.
+The file contains the weekly schedule, messages, named templates, template display name, audience, selected profiles, automatic-sync preference, theme, palette, linked-time preference, first-run guidance state, window size, update-check metadata, sync state, and recent sanitized activity. Most edits are saved after a short debounce, with a final save when the main window closes.
 
 Authentication tokens are cached separately by MSAL at:
 

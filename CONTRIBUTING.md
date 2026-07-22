@@ -51,7 +51,7 @@ User settings live in `%APPDATA%\OOFSponderModern\usersettings.json`.
 
 ## Microsoft 365 and privacy rules
 
-- Applying to Microsoft 365 must remain a manual, reviewed, and confirmed action.
+- Manual apply must remain reviewed and confirmed. Automatic apply must be explicitly enabled, use silent authentication, compare remote state before PATCH, and expose its current status.
 - Keep schedule calculation outside `GraphMailboxSettingsClient`; Graph receives a validated `MailboxSettingsPreview`.
 - Continue using delegated `user.read` and `MailboxSettings.ReadWrite` scopes unless a feature explicitly justifies and documents another permission.
 - Do not write message bodies, access tokens, or mailbox response content to diagnostics or recent activity.
