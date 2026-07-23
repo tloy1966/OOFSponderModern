@@ -20,7 +20,8 @@ tests.NextWorkingStartUsesPostDstOffset();
 tests.DefaultSettingsUseNineToSixWeekdays();
 tests.DefaultSettingsIncludeNamedMessageTemplates();
 tests.DefaultSettingsIncludeValidLongLeaveDraft();
-tests.LocalSuggestionDatesAreAlwaysEnglish();
+tests.ActiveLocalSuggestionFocusesOnReturnTimeInEnglish();
+tests.FutureLocalSuggestionIncludesStartTime();
 tests.SavedTemplateDatesAreAlwaysEnglish();
 tests.AutomaticSyncComparisonKeepsActiveIntervalStable();
 tests.MessageTemplateVariablesResolveFromCurrentWindow();
@@ -225,7 +226,7 @@ internal sealed class SchedulerServiceTests
         AssertEqual(ScheduleSource.WeeklySchedule, state.Preferences.SelectedScheduleSource, "Default schedule source");
     }
 
-    public void LocalSuggestionDatesAreAlwaysEnglish()
+    public void ActiveLocalSuggestionFocusesOnReturnTimeInEnglish()
     {
         var originalCulture = CultureInfo.CurrentCulture;
         try
@@ -239,17 +240,37 @@ internal sealed class SchedulerServiceTests
                 window,
                 AudienceScope.ContactsOnly,
                 TemplateTargetProfile.Primary,
-                window.Start);
+                window.Start.AddHours(1));
 
             var result = new LocalOofTemplateGenerator().GenerateAsync(request).GetAwaiter().GetResult();
 
-            AssertEqual(true, result.InternalTemplate.Contains("Fri, Jul 17 2026 4:21 PM +08:00"), "English suggestion start");
-            AssertEqual(true, result.ExternalTemplate.Contains("Mon, Jul 20 2026 7:00 AM +08:00"), "English suggestion return");
+            AssertEqual(true, result.InternalTemplate.StartsWith("Hi, I am currently out of office and will return on Monday, July 20 at 7:00 AM."), "Active suggestion return wording");
+            AssertEqual(false, result.InternalTemplate.Contains("Friday, July 17"), "Active suggestion omits start");
+            AssertEqual(false, result.InternalTemplate.Contains("+08:00"), "Active suggestion omits offset");
+            AssertEqual(false, result.ExternalTemplate.Contains("contacts only", StringComparison.OrdinalIgnoreCase), "External suggestion omits audience configuration");
         }
         finally
         {
             CultureInfo.CurrentCulture = originalCulture;
         }
+    }
+
+    public void FutureLocalSuggestionIncludesStartTime()
+    {
+        var generatedAt = new DateTimeOffset(2026, 7, 17, 12, 0, 0, TimeSpan.FromHours(8));
+        var window = new OofWindow(
+            new DateTimeOffset(2026, 7, 17, 18, 0, 0, TimeSpan.FromHours(8)),
+            new DateTimeOffset(2026, 7, 20, 9, 0, 0, TimeSpan.FromHours(8)),
+            "test");
+        var request = new OofTemplateRequest(
+            window,
+            AudienceScope.ContactsOnly,
+            TemplateTargetProfile.Primary,
+            generatedAt);
+
+        var result = new LocalOofTemplateGenerator().GenerateAsync(request).GetAwaiter().GetResult();
+
+        AssertEqual(true, result.InternalTemplate.StartsWith("Hi, I will be out of office from Friday, July 17 at 6:00 PM until Monday, July 20 at 9:00 AM."), "Future suggestion includes start and return");
     }
 
     public void SavedTemplateDatesAreAlwaysEnglish()
